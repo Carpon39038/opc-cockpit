@@ -58,7 +58,19 @@ export function actionText(a: Activity): string {
   }
 }
 
+/** ISO 时间戳对应的本地日期 YYYY-MM-DD */
+export function localDate(iso: string | Date): string {
+  const d = typeof iso === 'string' ? new Date(iso) : iso;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** 本地时区的今天 YYYY-MM-DD */
+export function localToday(): string {
+  return localDate(new Date());
+}
+
 export function isOverdue(due: string): boolean {
   if (!due) return false;
-  return due < new Date().toISOString().slice(0, 10);
+  return due < localToday();
 }

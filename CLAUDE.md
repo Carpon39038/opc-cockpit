@@ -1,6 +1,6 @@
 # OPC Cockpit
 
-一人公司驾驶舱。当前已实现：任务看板（Web UI + `opc` CLI + SQLite），AI Agent 是一等公民工作者。
+一人公司驾驶舱。当前已实现：驾驶舱首页 + 任务看板（Web UI + `opc` CLI + SQLite），AI Agent 是一等公民工作者。
 
 ## 命令
 
@@ -13,7 +13,7 @@
 - `src/shared/` — 类型、SQLite（node:sqlite，零原生依赖）、任务操作逻辑（server 与 CLI 共用）
 - `src/server/` — Hono API + 伺服看板静态文件
 - `src/cli/` — `opc` 命令行
-- `web/src/` — React 看板 UI（手写 CSS，驾驶舱风格）
+- `web/src/` — React UI，hash 路由：`#/` 驾驶舱首页（pages/Home）、`#/board` 任务看板（pages/Board）；App.tsx 持有共享状态（轮询/抽屉/新建弹窗），新模块加页面 + NavRail 项即可
 - 数据在 `data/opc.db`（gitignored），可用 `OPC_DB` 环境变量指定
 
 ## 任务看板协议（AI 必读）

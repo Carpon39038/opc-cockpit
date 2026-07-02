@@ -16,14 +16,13 @@ const DONE_LIMIT = 30;
 interface Props {
   status: Status;
   tasks: Task[];
-  index: number;
   onDrop: (id: number, to: Status) => void;
   onCardClick: (id: number) => void;
   onQuickAdd: () => void;
   onApprove: (id: number) => void;
 }
 
-export function Column({ status, tasks, index, onDrop, onCardClick, onQuickAdd, onApprove }: Props) {
+export function Column({ status, tasks, onDrop, onCardClick, onQuickAdd, onApprove }: Props) {
   const [over, setOver] = useState(false);
   const depth = useRef(0);
   const shown = status === 'done' ? tasks.slice(0, DONE_LIMIT) : tasks;
@@ -31,7 +30,6 @@ export function Column({ status, tasks, index, onDrop, onCardClick, onQuickAdd, 
   return (
     <section
       className={`col col-${status} ${over ? 'col-over' : ''}`}
-      style={{ animationDelay: `${index * 60}ms` }}
       onDragEnter={(e) => {
         e.preventDefault();
         depth.current += 1;
