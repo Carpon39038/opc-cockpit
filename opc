@@ -1,0 +1,3 @@
+#!/bin/sh
+# OPC Cockpit CLI 包装器 —— 可从任何目录调用
+exec node "$(dirname "$0")/dist/cli.js" "$@"
