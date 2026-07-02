@@ -33,7 +33,14 @@ export function TaskRow({ task, onClick, extra, note }: Props) {
               </span>
             )}
             {task.assignee && (
-              <span className={`badge ${isAgent(task.assignee) ? 'badge-agent' : 'badge-human'}`}>
+              <span
+                className={`badge ${isAgent(task.assignee) ? 'badge-agent' : 'badge-human'}`}
+                title={
+                  isAgent(task.assignee) && (task.agent_tool || task.agent_model)
+                    ? [task.assignee, task.agent_tool, task.agent_model].filter(Boolean).join(' · ')
+                    : undefined
+                }
+              >
                 {task.status === 'in_progress' && isAgent(task.assignee) && <span className="dot dot-pulse" />}
                 {isAgent(task.assignee) ? `⚙ ${task.assignee}` : '我'}
               </span>

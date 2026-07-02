@@ -47,6 +47,26 @@ function actor(): string {
   return HUMAN_ACTOR;
 }
 
+/** 自动识别当前运行环境的工具名 */
+function detectTool(): string {
+  const env = process.env;
+  if (env.OPC_TOOL) return env.OPC_TOOL;
+  if (env.CLAUDECODE || env.CLAUDE_CODE_ENTRYPOINT) return 'claude-code';
+  if (env.CURSOR_TRACE_ID || env.CURSOR_AGENT) return 'cursor';
+  if (env.CODEX_SANDBOX || env.CODEX_THREAD_ID) return 'codex';
+  if (env.GEMINI_CLI) return 'gemini-cli';
+  if (env.AIDER_MODEL) return 'aider';
+  return '';
+}
+
+/**
+ * 模型名兜底检测。注意 ANTHROPIC_MODEL 可能是 shell 全局配置，
+ * 不一定等于当前会话真实模型 —— Agent 应显式传 --model。
+ */
+function detectModel(): string {
+  return process.env.OPC_MODEL || process.env.ANTHROPIC_MODEL || '';
+}
+
 function jsonMode(): boolean {
   return Boolean(program.opts<GlobalOpts>().json);
 }
@@ -130,7 +150,9 @@ function safeParse(s: string): Record<string, unknown> {
 
 function printDetail(t: Task, activity: Activity[]) {
   console.log(`${taskRef(t.id)} [${t.priority}] ${t.title}`);
-  console.log(`状态: ${STATUS_LABELS[t.status]}  负责: ${t.assignee || '未分配'}${t.project ? `  项目: ${t.project}` : ''}${t.due_date ? `  截止: ${t.due_date}` : ''}`);
+  const agentInfo = [t.agent_tool, t.agent_model].filter(Boolean).join(' · ');
+  const who = t.assignee ? `${t.assignee}${agentInfo ? `（${agentInfo}）` : ''}` : '未分配';
+  console.log(`状态: ${STATUS_LABELS[t.status]}  负责: ${who}${t.project ? `  项目: ${t.project}` : ''}${t.due_date ? `  截止: ${t.due_date}` : ''}`);
   if (t.description) {
     console.log('---');
     console.log(t.description);
@@ -223,12 +245,17 @@ program
 program
   .command('claim [ref]')
   .description('领取任务并开始（不带编号 = 自动领取优先级最高的待领取任务）')
-  .action((ref?: string) => {
+  .option('--tool <tool>', '工具名（默认自动识别，如 claude-code）')
+  .option('--model <model>', '模型名（Agent 必须显式传自己的模型 ID，如 claude-fable-5）')
+  .action((ref: string | undefined, opts: { tool?: string; model?: string }) => {
     const id = ref ? parseRef(ref) : null;
-    const t = claimTask(id, actor());
+    const tool = opts.tool ?? detectTool();
+    const model = opts.model ?? detectModel();
+    const t = claimTask(id, actor(), { tool, model });
     const activity = getTaskActivity(t.id);
     out({ ...t, activity }, () => {
-      console.log(`✓ ${actor()} 已领取 ${taskRef(t.id)}，状态 → ${STATUS_LABELS[t.status]}\n`);
+      const info = [tool, model].filter(Boolean).join(' · ');
+      console.log(`✓ ${actor()}${info ? `（${info}）` : ''} 已领取 ${taskRef(t.id)}，状态 → ${STATUS_LABELS[t.status]}\n`);
       printDetail(t, activity);
     });
   });
@@ -298,11 +325,15 @@ program
 
 program
   .command('info')
-  .description('显示数据库位置等信息')
+  .description('显示数据库位置和身份识别结果')
   .action(() => {
-    out({ db: dbPath(), actor: actor() }, () => {
+    const tool = detectTool();
+    const model = detectModel();
+    out({ db: dbPath(), actor: actor(), tool, model }, () => {
       console.log(`数据库: ${dbPath()}`);
       console.log(`当前身份: ${actor()}`);
+      console.log(`工具识别: ${tool || '（未识别）'}`);
+      console.log(`模型兜底: ${model || '（无）'}  ← 环境变量仅供参考，claim 时请用 --model 显式指定`);
     });
   });
 

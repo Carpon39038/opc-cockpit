@@ -32,7 +32,7 @@ npm start        # http://localhost:5175
 ```bash
 ./opc add "任务标题" -d "描述" -p P1 --project cockpit   # 建任务
 ./opc list -s todo                                      # 看可领取的
-./opc claim                                             # 领取优先级最高的任务
+./opc claim --model claude-fable-5                      # 领取优先级最高的任务（Agent 上报模型名）
 ./opc progress T-3 "进展说明"                            # 汇报进度
 ./opc done T-3 -m "交付摘要"                             # Agent 完成 → 进入待审核
 ./opc show T-3                                          # 详情 + 全部动态
@@ -44,7 +44,7 @@ npm start        # http://localhost:5175
 - **领取语义**：`claim` = 认领 + 进入「进行中」，有冲突检测（别人领的抢不走）。
 - **审核台雏形**：AI `done` 默认进「待审核」，人在看板点「验收通过」才算完成——所有自动化可确认。
 - **活动日志**：谁、何时、做了什么全部入账，看板右侧实时可见。
-- **身份识别**：Claude Code 会话自动识别为 `claude`，多 Agent 用 `--as` 区分。
+- **身份识别**：Claude Code 会话自动识别为 `claude`，多 Agent 用 `--as` 区分；领取时记录工具名（自动识别）和模型名（`--model` 上报），看板卡片、抽屉、运行日志都能看到是哪个 AI 在干活。
 
 AI 的详细工作协议见 [CLAUDE.md](CLAUDE.md)。开发模式 `npm run dev`（前端热更新在 :5173）。
 

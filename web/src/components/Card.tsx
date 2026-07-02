@@ -11,6 +11,7 @@ interface Props {
 export function Card({ task, onClick, onApprove }: Props) {
   const working = task.status === 'in_progress' && isAgent(task.assignee);
   const overdue = isOverdue(task.due_date) && task.status !== 'done';
+  const agentInfo = [task.agent_tool, task.agent_model].filter(Boolean).join(' · ');
 
   return (
     <article
@@ -37,7 +38,10 @@ export function Card({ task, onClick, onApprove }: Props) {
         )}
         <span className="spacer" />
         {task.assignee && (
-          <span className={`badge ${isAgent(task.assignee) ? 'badge-agent' : 'badge-human'}`}>
+          <span
+            className={`badge ${isAgent(task.assignee) ? 'badge-agent' : 'badge-human'}`}
+            title={isAgent(task.assignee) && agentInfo ? `${task.assignee} · ${agentInfo}` : undefined}
+          >
             {working && <span className="dot dot-pulse" />}
             {isAgent(task.assignee) ? `⚙ ${task.assignee}` : '我'}
           </span>

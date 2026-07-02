@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Status, Task } from '../../../src/shared/types';
 import { PRIORITIES, STATUSES, STATUS_LABELS, taskRef } from '../../../src/shared/types';
 import type { TaskDetail } from '../api';
-import { actionText, actorClass, actorLabel, rel } from '../ui';
+import { actionText, actorClass, actorLabel, claimAgentInfo, rel } from '../ui';
 
 interface Props {
   detail: TaskDetail;
@@ -112,6 +112,11 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
                 <option value="me" />
                 <option value="claude" />
               </datalist>
+              {(detail.agent_tool || detail.agent_model) && (
+                <span className="agent-sub">
+                  {[detail.agent_tool, detail.agent_model].filter(Boolean).join(' · ')}
+                </span>
+              )}
             </label>
             <label className="field">
               <span>项目</span>
@@ -201,7 +206,9 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
                       <b className={actorClass(a.actor)}>{actorLabel(a.actor)}</b> {actionText(a)}
                       <span className="tl-time">{rel(a.created_at)}</span>
                     </div>
-                    {a.content && <div className="tl-content">{a.content}</div>}
+                    {(a.content || claimAgentInfo(a)) && (
+                      <div className="tl-content">{a.content || claimAgentInfo(a)}</div>
+                    )}
                   </div>
                 </li>
               ))}

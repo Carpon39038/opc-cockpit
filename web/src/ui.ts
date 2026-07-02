@@ -31,6 +31,13 @@ function safeMeta(a: Activity): Record<string, unknown> {
   }
 }
 
+/** 领取动态里记录的工具/模型（如 claude-code · claude-fable-5） */
+export function claimAgentInfo(a: Activity): string {
+  if (a.kind !== 'claimed') return '';
+  const meta = safeMeta(a);
+  return [meta.tool, meta.model].filter(Boolean).join(' · ');
+}
+
 /** 动态条目的动作描述 */
 export function actionText(a: Activity): string {
   const meta = safeMeta(a);

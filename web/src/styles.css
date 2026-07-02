@@ -981,6 +981,14 @@ textarea::placeholder {
   font-size: 12px;
 }
 
+.agent-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--cyan);
+  opacity: 0.8;
+  padding: 2px 2px 0;
+}
+
 .review-bar {
   display: flex;
   align-items: center;

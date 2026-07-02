@@ -83,14 +83,21 @@ app.delete('/api/tasks/:id', (c) => {
   return c.json({ ok: true });
 });
 
+function agentOf(body: Record<string, unknown>): { tool?: string; model?: string } {
+  return {
+    tool: typeof body.tool === 'string' ? body.tool : undefined,
+    model: typeof body.model === 'string' ? body.model : undefined,
+  };
+}
+
 app.post('/api/tasks/:id/claim', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  return c.json(claimTask(Number(c.req.param('id')), actorOf(body)));
+  return c.json(claimTask(Number(c.req.param('id')), actorOf(body), agentOf(body)));
 });
 
 app.post('/api/claim-next', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  return c.json(claimTask(null, actorOf(body)));
+  return c.json(claimTask(null, actorOf(body), agentOf(body)));
 });
 
 app.get('/api/next', (c) => c.json(peekNext()));

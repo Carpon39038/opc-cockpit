@@ -132,11 +132,17 @@ export function createTask(input: CreateInput, actor: string): Task {
   return getTask(id);
 }
 
+/** 领取者的工具/模型信息（人领取时为空） */
+export interface AgentMeta {
+  tool?: string;
+  model?: string;
+}
+
 /**
  * 领取任务。id 为 null 时自动领取「待领取」列中优先级最高的未分配任务。
- * 领取 = 设为自己 + 状态改为进行中。
+ * 领取 = 设为自己 + 状态改为进行中，并记录工具名/模型名。
  */
-export function claimTask(id: number | null, actor: string): Task {
+export function claimTask(id: number | null, actor: string, agent: AgentMeta = {}): Task {
   const db = getDb();
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -158,10 +164,16 @@ export function claimTask(id: number | null, actor: string): Task {
       }
     }
     const ts = now();
+    const tool = agent.tool?.trim() || '';
+    const model = agent.model?.trim() || '';
     db.prepare(
-      `UPDATE tasks SET assignee = ?, status = 'in_progress', claimed_at = ?, updated_at = ?, completed_at = '' WHERE id = ?`
-    ).run(actor, ts, ts, task.id);
-    log(task.id, actor, 'claimed', '', { from: task.status, to: 'in_progress' });
+      `UPDATE tasks SET assignee = ?, agent_tool = ?, agent_model = ?, status = 'in_progress',
+       claimed_at = ?, updated_at = ?, completed_at = '' WHERE id = ?`
+    ).run(actor, tool, model, ts, ts, task.id);
+    const meta: Record<string, string> = { from: task.status, to: 'in_progress' };
+    if (tool) meta.tool = tool;
+    if (model) meta.model = model;
+    log(task.id, actor, 'claimed', '', meta);
     db.exec('COMMIT');
     return getTask(task.id);
   } catch (e) {
@@ -201,10 +213,12 @@ export function moveTask(id: number, to: string, actor: string, note = ''): Task
     .prepare(
       `UPDATE tasks SET status = ?, updated_at = ?, completed_at = ?,
        assignee = CASE WHEN ? THEN '' ELSE assignee END,
+       agent_tool = CASE WHEN ? THEN '' ELSE agent_tool END,
+       agent_model = CASE WHEN ? THEN '' ELSE agent_model END,
        claimed_at = CASE WHEN ? THEN '' ELSE claimed_at END
        WHERE id = ?`
     )
-    .run(to, ts, to === 'done' ? ts : '', release ? 1 : 0, release ? 1 : 0, task.id);
+    .run(to, ts, to === 'done' ? ts : '', release ? 1 : 0, release ? 1 : 0, release ? 1 : 0, release ? 1 : 0, task.id);
   log(task.id, actor, 'status', note, { from: task.status, to });
   return getTask(task.id);
 }
@@ -253,6 +267,10 @@ export function updateTask(id: number, input: UpdateInput, actor: string): Task 
   apply('project', input.project);
   apply('due_date', input.due_date);
   apply('assignee', input.assignee);
+  // 手动改负责人时，原来记录的工具/模型不再可信，清空等下次领取重写
+  if (changed.includes('assignee')) {
+    fields.push("agent_tool = ''", "agent_model = ''");
+  }
   if (!fields.length) return task;
   params.push(now(), task.id);
   getDb().prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = ? WHERE id = ?`).run(...params);
