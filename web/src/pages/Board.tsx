@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Activity, Status, Task } from '../../../src/shared/types';
 import { STATUSES, isAgent, taskRef } from '../../../src/shared/types';
 import { ActivityRail } from '../components/ActivityRail';
@@ -9,16 +9,22 @@ type AssigneeFilter = 'all' | 'me' | 'agent' | 'none';
 interface Props {
   tasks: Task[];
   activity: Activity[];
+  /** 从项目中心跳转时预设项目筛选；n 递增以支持重复跳转同一项目 */
+  jump?: { project: string; n: number };
   onOpenTask: (id: number) => void;
   onDrop: (id: number, to: Status) => void;
   onQuickAdd: (status: Status) => void;
   onApprove: (id: number) => void;
 }
 
-export function BoardPage({ tasks, activity, onOpenTask, onDrop, onQuickAdd, onApprove }: Props) {
+export function BoardPage({ tasks, activity, jump, onOpenTask, onDrop, onQuickAdd, onApprove }: Props) {
   const [q, setQ] = useState('');
   const [who, setWho] = useState<AssigneeFilter>('all');
   const [project, setProject] = useState('all');
+
+  useEffect(() => {
+    if (jump?.project) setProject(jump.project);
+  }, [jump?.n, jump?.project]);
 
   const projects = useMemo(() => {
     const set = new Set<string>();

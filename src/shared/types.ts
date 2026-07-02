@@ -61,6 +61,34 @@ export interface Activity {
   task_title?: string; // 全局动态流 join 出来的字段
 }
 
+// ---------------- 项目 ----------------
+
+export const PROJECT_STATUSES = ['active', 'paused', 'done'] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  active: '推进中',
+  paused: '暂停',
+  done: '已完成',
+};
+
+export interface Project {
+  name: string; // 主键，任务通过 tasks.project 关联
+  goal: string; // 目标
+  status: ProjectStatus;
+  next_step: string; // 下一步
+  blockers: string; // 阻塞与风险
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectWithStats extends Project {
+  total: number;
+  by_status: Record<Status, number>;
+  agents_working: number; // 进行中且由 Agent 认领的任务数
+  last_update: string; // 项目下任务的最近更新时间
+}
+
 export const HUMAN_ACTOR = 'me';
 
 export function isAgent(actor: string): boolean {

@@ -57,16 +57,31 @@ export function getDb(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_activity_task ON activity(task_id);
     CREATE INDEX IF NOT EXISTS idx_activity_time ON activity(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+    CREATE TABLE IF NOT EXISTS projects (
+      name TEXT PRIMARY KEY,
+      goal TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      next_step TEXT NOT NULL DEFAULT '',
+      blockers TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
   migrate(db);
   return db;
 }
 
-/** 旧库补列（幂等） */
+/** 旧库补列 + 项目表回填（幂等） */
 function migrate(db: DatabaseSync) {
   const cols = new Set(
     (db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]).map((c) => c.name)
   );
   if (!cols.has('agent_tool')) db.exec("ALTER TABLE tasks ADD COLUMN agent_tool TEXT NOT NULL DEFAULT ''");
   if (!cols.has('agent_model')) db.exec("ALTER TABLE tasks ADD COLUMN agent_model TEXT NOT NULL DEFAULT ''");
+  // 任务里出现过但没建档的项目名，自动补一行项目记录
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT OR IGNORE INTO projects (name, created_at, updated_at)
+     SELECT DISTINCT project, ?, ? FROM tasks WHERE project != ''`
+  ).run(now, now);
 }

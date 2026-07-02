@@ -1,6 +1,8 @@
-import type { Activity, Task } from '../../src/shared/types';
+import type { Activity, Project, ProjectWithStats, Task } from '../../src/shared/types';
 
 export type TaskDetail = Task & { activity: Activity[] };
+export type ProjectDetail = Project & { tasks: Task[] };
+export type ProjectPatch = Partial<Pick<Project, 'goal' | 'status' | 'next_step' | 'blockers'>>;
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -28,4 +30,11 @@ export const api = {
   comment: (id: number, content: string) =>
     post(`/api/tasks/${id}/progress`, { content, kind: 'comment' }).then((r) => j<Task>(r)),
   remove: (id: number) => fetch(`/api/tasks/${id}`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
+
+  projects: () => fetch('/api/projects').then((r) => j<ProjectWithStats[]>(r)),
+  createProject: (name: string) => post('/api/projects', { name }).then((r) => j<ProjectDetail>(r)),
+  patchProject: (name: string, fields: ProjectPatch) =>
+    post(`/api/projects/${encodeURIComponent(name)}`, fields, 'PATCH').then((r) => j<ProjectDetail>(r)),
+  removeProject: (name: string) =>
+    fetch(`/api/projects/${encodeURIComponent(name)}`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
 };

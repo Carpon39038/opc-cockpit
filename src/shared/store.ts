@@ -5,6 +5,10 @@ import {
   HUMAN_ACTOR,
   PRIORITIES,
   Priority,
+  PROJECT_STATUSES,
+  Project,
+  ProjectStatus,
+  ProjectWithStats,
   STATUSES,
   Status,
   Task,
@@ -128,6 +132,7 @@ export function createTask(input: CreateInput, actor: string): Task {
       ts
     );
   const id = Number(result.lastInsertRowid);
+  if (input.project) ensureProject(input.project);
   log(id, actor, 'created', title, { status, priority });
   return getTask(id);
 }
@@ -274,6 +279,7 @@ export function updateTask(id: number, input: UpdateInput, actor: string): Task 
   if (!fields.length) return task;
   params.push(now(), task.id);
   getDb().prepare(`UPDATE tasks SET ${fields.join(', ')}, updated_at = ? WHERE id = ?`).run(...params);
+  if (changed.includes('project') && input.project) ensureProject(input.project);
   log(task.id, actor, 'updated', '', { changed });
   return getTask(task.id);
 }
@@ -296,10 +302,112 @@ export function recentActivity(limit = 30): Activity[] {
     .all(limit) as unknown as Activity[];
 }
 
-/** 看板元信息：所有出现过的项目名 */
-export function listProjects(): string[] {
+// ---------------- 项目 ----------------
+
+function assertProjectStatus(s: string): asserts s is ProjectStatus {
+  if (!PROJECT_STATUSES.includes(s as ProjectStatus)) {
+    throw new StoreError(`无效项目状态: ${s}（可选: ${PROJECT_STATUSES.join(', ')}）`);
+  }
+}
+
+/** 项目自动建档：任务登记/改项目时调用，不存在则补一行 */
+export function ensureProject(name: string): void {
+  const n = name.trim();
+  if (!n) return;
+  const ts = now();
+  getDb()
+    .prepare('INSERT OR IGNORE INTO projects (name, created_at, updated_at) VALUES (?, ?, ?)')
+    .run(n, ts, ts);
+}
+
+/** 所有项目名（项目表 ∪ 任务里出现过的），供筛选和补全 */
+export function listProjectNames(): string[] {
   const rows = getDb()
-    .prepare("SELECT DISTINCT project FROM tasks WHERE project != '' ORDER BY project")
-    .all() as { project: string }[];
-  return rows.map((r) => r.project);
+    .prepare(
+      `SELECT name FROM projects
+       UNION SELECT DISTINCT project FROM tasks WHERE project != ''
+       ORDER BY name`
+    )
+    .all() as { name: string }[];
+  return rows.map((r) => r.name);
+}
+
+const PROJECT_ORDER: Record<ProjectStatus, number> = { active: 0, paused: 1, done: 2 };
+
+/** 项目列表 + 任务统计，推进中在前、按最近动作排序 */
+export function listProjectsWithStats(): ProjectWithStats[] {
+  const db = getDb();
+  const projects = db.prepare('SELECT * FROM projects').all() as unknown as Project[];
+  const taskRows = db
+    .prepare("SELECT project, status, assignee, updated_at FROM tasks WHERE project != ''")
+    .all() as { project: string; status: Status; assignee: string; updated_at: string }[];
+
+  const statsOf = (name: string) => {
+    const rows = taskRows.filter((r) => r.project === name);
+    const by_status = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<Status, number>;
+    let agents = 0;
+    let last = '';
+    for (const r of rows) {
+      by_status[r.status] += 1;
+      if (r.status === 'in_progress' && isAgent(r.assignee)) agents += 1;
+      if (r.updated_at > last) last = r.updated_at;
+    }
+    return { total: rows.length, by_status, agents_working: agents, last_update: last };
+  };
+
+  return projects
+    .map((p) => ({ ...p, ...statsOf(p.name) }))
+    .sort(
+      (a, b) =>
+        PROJECT_ORDER[a.status] - PROJECT_ORDER[b.status] ||
+        (b.last_update || b.updated_at).localeCompare(a.last_update || a.updated_at)
+    );
+}
+
+export function getProject(name: string): Project & { tasks: Task[] } {
+  const row = getDb().prepare('SELECT * FROM projects WHERE name = ?').get(name) as
+    | Project
+    | undefined;
+  if (!row) throw new StoreError(`项目「${name}」不存在`, 404);
+  const tasks = listTasks({ project: name });
+  return { ...row, tasks };
+}
+
+export interface ProjectUpdateInput {
+  goal?: string;
+  status?: string;
+  next_step?: string;
+  blockers?: string;
+}
+
+/** 更新项目字段（不存在则先建档） */
+export function updateProject(name: string, input: ProjectUpdateInput): Project & { tasks: Task[] } {
+  const n = name.trim();
+  if (!n) throw new StoreError('项目名不能为空');
+  if (input.status !== undefined) assertProjectStatus(input.status);
+  ensureProject(n);
+  const fields: string[] = [];
+  const params: string[] = [];
+  for (const key of ['goal', 'status', 'next_step', 'blockers'] as const) {
+    const v = input[key];
+    if (v !== undefined) {
+      fields.push(`${key} = ?`);
+      params.push(v);
+    }
+  }
+  if (fields.length) {
+    params.push(now());
+    getDb().prepare(`UPDATE projects SET ${fields.join(', ')}, updated_at = ? WHERE name = ?`).run(...params, n);
+  }
+  return getProject(n);
+}
+
+/** 删除项目档案（仅限没有关联任务时） */
+export function deleteProject(name: string): void {
+  const count = (
+    getDb().prepare('SELECT COUNT(*) AS c FROM tasks WHERE project = ?').get(name) as { c: number }
+  ).c;
+  if (count > 0) throw new StoreError(`项目「${name}」下还有 ${count} 个任务，不能删除（可将状态改为已完成）`, 409);
+  const r = getDb().prepare('DELETE FROM projects WHERE name = ?').run(name);
+  if (Number(r.changes) === 0) throw new StoreError(`项目「${name}」不存在`, 404);
 }

@@ -45,6 +45,7 @@ npm start        # http://localhost:5175
 - **审核台雏形**：AI `done` 默认进「待审核」，人在看板点「验收通过」才算完成——所有自动化可确认。
 - **活动日志**：谁、何时、做了什么全部入账，看板右侧实时可见。
 - **身份识别**：Claude Code 会话自动识别为 `claude`，多 Agent 用 `--as` 区分；领取时记录工具名（自动识别）和模型名（`--model` 上报），看板卡片、抽屉、运行日志都能看到是哪个 AI 在干活。
+- **项目中心**（`#/projects`）：项目是一等实体——目标 / 下一步 / 阻塞 / 状态 + 任务统计和活跃任务列表；登记任务时项目自动建档（不带 `--project` 则从 git 仓库名自动识别），点统计芯片跳转到按项目筛选的看板。CLI：`opc projects`、`opc project <名> [--goal/--next/--blockers/--status]`。
 
 AI 的详细工作协议见 [CLAUDE.md](CLAUDE.md)。开发模式 `npm run dev`（前端热更新在 :5173）。
 

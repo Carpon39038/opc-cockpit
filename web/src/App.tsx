@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, Status, Task } from '../../src/shared/types';
+import type { Activity, ProjectWithStats, Status, Task } from '../../src/shared/types';
 import { isAgent } from '../../src/shared/types';
-import { api, type TaskDetail } from './api';
+import { api, type ProjectPatch, type TaskDetail } from './api';
 import { Clock } from './components/Clock';
 import { Drawer } from './components/Drawer';
 import { NavRail } from './components/NavRail';
 import { NewTaskModal } from './components/NewTaskModal';
 import { BoardPage } from './pages/Board';
 import { HomePage } from './pages/Home';
+import { ProjectsPage } from './pages/Projects';
 
 function useRoute(): string {
   const [route, setRoute] = useState(() => location.hash.replace(/^#/, '') || '/');
@@ -22,24 +23,28 @@ function useRoute(): string {
 const PAGE_TITLES: Record<string, [string, string]> = {
   '/': ['驾驶舱', 'DAILY OPS'],
   '/board': ['任务看板', 'TASK BOARD'],
+  '/projects': ['项目中心', 'PROJECTS'],
 };
 
 export default function App() {
   const route = useRoute();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [projects, setProjects] = useState<ProjectWithStats[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [newStatus, setNewStatus] = useState<Status | null>(null);
+  const [boardJump, setBoardJump] = useState<{ project: string; n: number }>({ project: '', n: 0 });
   const [error, setError] = useState('');
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selectedId;
 
   const refresh = useCallback(async () => {
     try {
-      const [t, a] = await Promise.all([api.tasks(), api.activity()]);
+      const [t, a, p] = await Promise.all([api.tasks(), api.activity(), api.projects()]);
       setTasks(t);
       setActivity(a);
+      setProjects(p);
       if (selectedRef.current !== null) {
         setDetail(await api.detail(selectedRef.current));
       }
@@ -143,10 +148,24 @@ export default function App() {
           <BoardPage
             tasks={tasks}
             activity={activity}
+            jump={boardJump}
             onOpenTask={openTask}
             onDrop={onDrop}
             onQuickAdd={(s) => setNewStatus(s)}
             onApprove={onApprove}
+          />
+        ) : route === '/projects' ? (
+          <ProjectsPage
+            projects={projects}
+            tasks={tasks}
+            onOpenTask={openTask}
+            onPatchProject={(name, fields: ProjectPatch) => mutate(() => api.patchProject(name, fields))}
+            onCreateProject={(name) => mutate(() => api.createProject(name))}
+            onDeleteProject={(name) => mutate(() => api.removeProject(name))}
+            onJumpBoard={(project) => {
+              setBoardJump((prev) => ({ project, n: prev.n + 1 }));
+              location.hash = '#/board';
+            }}
           />
         ) : (
           <HomePage tasks={tasks} activity={activity} onOpenTask={openTask} onApprove={onApprove} />
@@ -169,7 +188,7 @@ export default function App() {
       {newStatus && (
         <NewTaskModal
           presetStatus={newStatus}
-          projects={[...new Set(tasks.map((t) => t.project).filter(Boolean))].sort()}
+          projects={[...new Set([...projects.map((p) => p.name), ...tasks.map((t) => t.project)])].filter(Boolean).sort()}
           onClose={() => setNewStatus(null)}
           onCreate={(input) => {
             setNewStatus(null);

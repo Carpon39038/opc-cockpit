@@ -1,8 +1,13 @@
 import '../shared/quiet';
+import { execSync } from 'node:child_process';
+import { basename, dirname, resolve } from 'node:path';
 import { Command } from 'commander';
 import {
   Activity,
   HUMAN_ACTOR,
+  PROJECT_STATUS_LABELS,
+  PROJECT_STATUSES,
+  ProjectWithStats,
   STATUS_ALIASES,
   STATUS_LABELS,
   STATUSES,
@@ -17,11 +22,14 @@ import {
   claimTask,
   completeTask,
   createTask,
+  getProject,
   getTask,
   getTaskActivity,
+  listProjectsWithStats,
   listTasks,
   moveTask,
   peekNext,
+  updateProject,
   updateTask,
 } from '../shared/store';
 import { dbPath } from '../shared/db';
@@ -65,6 +73,24 @@ function detectTool(): string {
  */
 function detectModel(): string {
   return process.env.OPC_MODEL || process.env.ANTHROPIC_MODEL || '';
+}
+
+/**
+ * 从当前 git 仓库自动识别项目名（worktree 会解析到主仓库名）。
+ * 不在 git 仓库里则返回空。
+ */
+function detectProject(): string {
+  if (process.env.OPC_PROJECT) return process.env.OPC_PROJECT;
+  try {
+    const out = execSync('git rev-parse --git-common-dir', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+    return basename(dirname(resolve(process.cwd(), out)));
+  } catch {
+    return '';
+  }
 }
 
 function jsonMode(): boolean {
@@ -228,18 +254,22 @@ program
   .option('-s, --status <status>', '初始状态', 'todo')
   .option('--due <date>', '截止日期 YYYY-MM-DD')
   .action((title: string, opts: { desc?: string; priority: string; project?: string; status: string; due?: string }) => {
+    const autoProject = opts.project === undefined ? detectProject() : '';
     const t = createTask(
       {
         title,
         description: opts.desc,
         priority: opts.priority.toUpperCase(),
-        project: opts.project,
+        project: opts.project ?? autoProject,
         status: resolveStatus(opts.status),
         due_date: opts.due,
       },
       actor()
     );
-    out(t, () => console.log(`✓ 已创建 ${fmtLine(t)} → ${STATUS_LABELS[t.status]}`));
+    out(t, () => {
+      console.log(`✓ 已创建 ${fmtLine(t)} → ${STATUS_LABELS[t.status]}`);
+      if (autoProject) console.log(`  （项目 ${autoProject} 自动识别自 git 仓库，--project 可覆盖）`);
+    });
   });
 
 program
@@ -321,6 +351,70 @@ program
       actor()
     );
     out(t, () => console.log(`✓ 已更新 ${fmtLine(t)}`));
+  });
+
+function fmtProjectStats(p: ProjectWithStats): string {
+  const parts: string[] = [];
+  const label: Record<Status, string> = {
+    backlog: '规划',
+    todo: '待领',
+    in_progress: '进行',
+    review: '待审',
+    done: '完成',
+  };
+  for (const s of STATUSES) {
+    if (p.by_status[s] > 0) parts.push(`${label[s]}${p.by_status[s]}`);
+  }
+  const agents = p.agents_working > 0 ? ` ⚙${p.agents_working}` : '';
+  return parts.length ? parts.join(' ') + agents : '无任务';
+}
+
+program
+  .command('projects')
+  .description('项目列表（含任务统计，推进中在前）')
+  .action(() => {
+    const projects = listProjectsWithStats();
+    out(projects, () => {
+      if (!projects.length) {
+        console.log('（还没有项目，登记任务时带 --project 会自动建档）');
+        return;
+      }
+      for (const status of PROJECT_STATUSES) {
+        const group = projects.filter((p) => p.status === status);
+        if (!group.length) continue;
+        console.log(`\n## ${PROJECT_STATUS_LABELS[status]} (${group.length})`);
+        for (const p of group) {
+          console.log(`  ${p.name.padEnd(16)} ${fmtProjectStats(p)}`);
+          if (p.next_step) console.log(`  ${''.padEnd(16)} 下一步: ${p.next_step.split('\n')[0]}`);
+        }
+      }
+    });
+  });
+
+program
+  .command('project <name>')
+  .description('查看项目详情；带选项则更新（目标/下一步/阻塞/状态）')
+  .option('--goal <goal>', '目标')
+  .option('--next <next>', '下一步')
+  .option('--blockers <blockers>', '阻塞与风险（清空传空串）')
+  .option('--status <status>', '状态 active/paused/done')
+  .action((name: string, opts: { goal?: string; next?: string; blockers?: string; status?: string }) => {
+    const hasUpdate =
+      opts.goal !== undefined || opts.next !== undefined || opts.blockers !== undefined || opts.status !== undefined;
+    const p = hasUpdate
+      ? updateProject(name, { goal: opts.goal, next_step: opts.next, blockers: opts.blockers, status: opts.status })
+      : getProject(name);
+    out(p, () => {
+      if (hasUpdate) console.log(`✓ 项目「${p.name}」已更新\n`);
+      console.log(`${p.name} [${PROJECT_STATUS_LABELS[p.status]}]`);
+      if (p.goal) console.log(`目标: ${p.goal}`);
+      if (p.next_step) console.log(`下一步: ${p.next_step}`);
+      if (p.blockers) console.log(`阻塞: ${p.blockers}`);
+      const active = p.tasks.filter((t) => t.status !== 'done');
+      const done = p.tasks.length - active.length;
+      console.log(`任务: ${active.length} 个进行 + ${done} 个完成`);
+      for (const t of active) console.log('  ' + fmtLine(t) + `  [${STATUS_LABELS[t.status]}]`);
+    });
   });
 
 program

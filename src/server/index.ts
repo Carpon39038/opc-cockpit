@@ -12,14 +12,18 @@ import {
   claimTask,
   completeTask,
   createTask,
+  deleteProject,
   deleteTask,
+  getProject,
   getTask,
   getTaskActivity,
-  listProjects,
+  listProjectNames,
+  listProjectsWithStats,
   listTasks,
   moveTask,
   peekNext,
   recentActivity,
+  updateProject,
   updateTask,
 } from '../shared/store';
 
@@ -125,7 +129,45 @@ app.get('/api/activity', (c) => {
   return c.json(recentActivity(limit));
 });
 
-app.get('/api/meta', (c) => c.json({ projects: listProjects() }));
+app.get('/api/meta', (c) => c.json({ projects: listProjectNames() }));
+
+// ---------------- 项目 ----------------
+
+app.get('/api/projects', (c) => c.json(listProjectsWithStats()));
+
+app.post('/api/projects', async (c) => {
+  const body = await c.req.json();
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return c.json({ error: '项目名不能为空' }, 400);
+  return c.json(
+    updateProject(name, {
+      goal: typeof body.goal === 'string' ? body.goal : undefined,
+      next_step: typeof body.next_step === 'string' ? body.next_step : undefined,
+      blockers: typeof body.blockers === 'string' ? body.blockers : undefined,
+      status: typeof body.status === 'string' ? body.status : undefined,
+    }),
+    201
+  );
+});
+
+app.get('/api/projects/:name', (c) => c.json(getProject(c.req.param('name'))));
+
+app.patch('/api/projects/:name', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    updateProject(c.req.param('name'), {
+      goal: typeof body.goal === 'string' ? body.goal : undefined,
+      next_step: typeof body.next_step === 'string' ? body.next_step : undefined,
+      blockers: typeof body.blockers === 'string' ? body.blockers : undefined,
+      status: typeof body.status === 'string' ? body.status : undefined,
+    })
+  );
+});
+
+app.delete('/api/projects/:name', (c) => {
+  deleteProject(c.req.param('name'));
+  return c.json({ ok: true });
+});
 
 // 静态资源（构建后的看板 UI）
 app.use('/assets/*', serveStatic({ root: './web/dist' }));

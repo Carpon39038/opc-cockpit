@@ -31,6 +31,15 @@ const ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    path: '/projects',
+    zh: '项目',
+    icon: (
+      <svg viewBox="0 0 24 24" {...S}>
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      </svg>
+    ),
+  },
 ];
 
 // 规划中的模块，先占位不可点
@@ -41,14 +50,6 @@ const SOON: { zh: string; icon: ReactElement }[] = [
       <svg viewBox="0 0 24 24" {...S}>
         <path d="M4 5h16v14H4z" />
         <path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20" />
-      </svg>
-    ),
-  },
-  {
-    zh: '项目',
-    icon: (
-      <svg viewBox="0 0 24 24" {...S}>
-        <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       </svg>
     ),
   },

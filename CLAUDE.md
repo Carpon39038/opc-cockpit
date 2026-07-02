@@ -13,7 +13,7 @@
 - `src/shared/` — 类型、SQLite（node:sqlite，零原生依赖）、任务操作逻辑（server 与 CLI 共用）
 - `src/server/` — Hono API + 伺服看板静态文件
 - `src/cli/` — `opc` 命令行
-- `web/src/` — React UI，hash 路由：`#/` 驾驶舱首页（pages/Home）、`#/board` 任务看板（pages/Board）；App.tsx 持有共享状态（轮询/抽屉/新建弹窗），新模块加页面 + NavRail 项即可
+- `web/src/` — React UI，hash 路由：`#/` 驾驶舱首页（pages/Home）、`#/board` 任务看板（pages/Board）、`#/projects` 项目中心（pages/Projects）；App.tsx 持有共享状态（轮询/抽屉/新建弹窗），新模块加页面 + NavRail 项即可
 - 数据在 `data/opc.db`（gitignored），可用 `OPC_DB` 环境变量指定
 
 ## 任务看板协议（AI 必读）
@@ -37,7 +37,8 @@
 3. 进度汇报写实质内容（做了什么、产出在哪、卡在哪），不要写"正在进行中"。描述和评论支持 Markdown（列表/代码块/表格/任务清单），看板上会渲染。
 4. `done` 必须带 `-m` 交付摘要。Agent 完成默认进「待审核」，用户在看板上验收；不要用 `--skip-review`，除非用户明确说过。
 5. 做不了/不该你做的任务：`opc comment T-3 "原因"` 然后 `opc move T-3 todo` 释放（移回 todo 会自动解除认领并清空工具/模型记录）。
-6. 发现新工作可以 `opc add "标题" -d "描述" --project xxx` 登记，而不是顺手做掉。
-7. 程序化读取加 `--json`。
+6. 发现新工作可以 `opc add "标题" -d "描述" --project xxx` 登记，而不是顺手做掉。不带 `--project` 会从当前 git 仓库自动识别项目名（worktree 解析到主仓库名），项目自动建档。
+7. 项目是一等实体：`opc projects` 看全局，`opc project <名>` 看详情。完成大块工作后顺手更新项目状态：`opc project <名> --next "下一步" [--blockers "阻塞"]`，让项目卡片始终反映真实进展。
+8. 程序化读取加 `--json`。
 
 用户在看板 UI（http://localhost:5175）上看到你的一切操作——运行日志实时滚动。
