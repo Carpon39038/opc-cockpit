@@ -1012,11 +1012,38 @@ textarea::placeholder {
 }
 
 .section-label {
+  display: flex;
+  align-items: baseline;
   font-size: 11px;
   color: var(--dim);
   letter-spacing: 0.1em;
   border-bottom: 1px solid var(--line-soft);
   padding-bottom: 5px;
+}
+
+.section-edit {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0;
+  padding: 0 4px;
+}
+
+.desc-empty {
+  background: transparent;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.13s, color 0.13s;
+}
+
+.desc-empty:hover {
+  border-color: rgba(55, 217, 146, 0.45);
+  color: var(--muted);
 }
 
 .desc-input {
@@ -1079,18 +1106,188 @@ textarea::placeholder {
   color: var(--muted);
   font-size: 12px;
   margin-top: 2px;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.tl-plain {
+  white-space: pre-wrap;
 }
 
 .comment-box {
   display: flex;
+  align-items: flex-end;
   gap: 8px;
   margin-top: 4px;
 }
 
-.comment-box input {
+.comment-box textarea {
   flex: 1;
+  resize: vertical;
+  min-height: 44px;
+  line-height: 1.5;
+  font-size: 12.5px;
+}
+
+/* ---------------- Markdown 渲染 ---------------- */
+
+.md {
+  font-size: 12.5px;
+  line-height: 1.7;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.md > * {
+  margin: 0 0 8px;
+}
+
+.md > *:last-child {
+  margin-bottom: 0;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-top: 12px;
+}
+
+.md > h1:first-child,
+.md > h2:first-child,
+.md > h3:first-child,
+.md > h4:first-child {
+  margin-top: 0;
+}
+
+.md h1 {
+  font-size: 15px;
+}
+
+.md h2 {
+  font-size: 14px;
+}
+
+.md h3,
+.md h4 {
+  font-size: 13px;
+}
+
+.md code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--cyan);
+  background: var(--panel-3);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.md pre {
+  background: #0d141b;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.md pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.md ul,
+.md ol {
+  padding-left: 20px;
+}
+
+.md li {
+  margin: 2px 0;
+}
+
+.md li::marker {
+  color: var(--dim);
+}
+
+.md li.task-list-item {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.md input[type='checkbox'] {
+  accent-color: var(--green);
+  margin-right: 7px;
+  vertical-align: -1.5px;
+}
+
+.md blockquote {
+  border-left: 2px solid var(--line);
+  padding: 2px 12px;
+  color: var(--muted);
+}
+
+.md a {
+  color: var(--cyan);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(69, 200, 214, 0.5);
+}
+
+.md a:hover {
+  border-bottom-style: solid;
+}
+
+.md table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.md th,
+.md td {
+  border: 1px solid var(--line);
+  padding: 4px 10px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.md th {
+  background: var(--panel-3);
+  color: var(--muted);
+}
+
+.md hr {
+  border: none;
+  border-top: 1px dashed var(--line);
+  margin: 10px 0;
+}
+
+.md img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.md del {
+  color: var(--dim);
+}
+
+/* 时间线里的 markdown 更紧凑 */
+.tl-content.md {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tl-content.md > * {
+  margin-bottom: 5px;
+}
+
+.tl-content.md pre {
+  padding: 8px 10px;
 }
 
 .drawer-footer {

@@ -60,7 +60,7 @@ export function NewTaskModal({ presetStatus, projects, onClose, onCreate }: Prop
           />
           <textarea
             rows={4}
-            placeholder="描述：目标、上下文、验收标准…（写清楚，AI 领取时全靠它）"
+            placeholder="描述：目标、上下文、验收标准…（支持 Markdown，写清楚，AI 领取时全靠它）"
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
           />

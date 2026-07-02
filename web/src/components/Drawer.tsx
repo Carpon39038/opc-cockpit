@@ -3,6 +3,7 @@ import type { Status, Task } from '../../../src/shared/types';
 import { PRIORITIES, STATUSES, STATUS_LABELS, taskRef } from '../../../src/shared/types';
 import type { TaskDetail } from '../api';
 import { actionText, actorClass, actorLabel, claimAgentInfo, rel } from '../ui';
+import { Markdown } from './Markdown';
 
 interface Props {
   detail: TaskDetail;
@@ -14,23 +15,17 @@ interface Props {
 
 export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props) {
   const [title, setTitle] = useState(detail.title);
-  const [desc, setDesc] = useState(detail.description);
-  const [descDirty, setDescDirty] = useState(false);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [draft, setDraft] = useState('');
   const [comment, setComment] = useState('');
 
-  // 切换任务时重置本地编辑状态；轮询更新时仅在未编辑时同步
+  // 切换任务时重置本地编辑状态（描述查看态直接渲染 detail，轮询不会打断编辑中的草稿）
   useEffect(() => {
     setTitle(detail.title);
-    setDescDirty(false);
-    setDesc(detail.description);
+    setEditingDesc(false);
     setComment('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.id]);
-
-  useEffect(() => {
-    if (!descDirty) setDesc(detail.description);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail.description]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -160,38 +155,58 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
           )}
 
           <div className="drawer-section">
-            <div className="section-label">描述</div>
-            <textarea
-              className="desc-input"
-              rows={5}
-              placeholder="目标、上下文、验收标准…（AI 领取任务时会读取这里）"
-              value={desc}
-              onChange={(e) => {
-                setDesc(e.target.value);
-                setDescDirty(true);
-              }}
-            />
-            {descDirty && desc !== detail.description && (
-              <div className="desc-actions">
+            <div className="section-label">
+              描述
+              {!editingDesc && detail.description && (
                 <button
-                  className="btn btn-primary"
+                  className="icon-btn section-edit"
+                  title="编辑描述"
                   onClick={() => {
-                    onPatch({ description: desc });
-                    setDescDirty(false);
+                    setDraft(detail.description);
+                    setEditingDesc(true);
                   }}
                 >
-                  保存描述
+                  ✎ 编辑
                 </button>
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setDesc(detail.description);
-                    setDescDirty(false);
-                  }}
-                >
-                  取消
-                </button>
-              </div>
+              )}
+            </div>
+            {editingDesc ? (
+              <>
+                <textarea
+                  className="desc-input"
+                  rows={7}
+                  autoFocus
+                  placeholder="目标、上下文、验收标准…（支持 Markdown，AI 领取任务时会读取这里）"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                />
+                <div className="desc-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      onPatch({ description: draft });
+                      setEditingDesc(false);
+                    }}
+                  >
+                    保存描述
+                  </button>
+                  <button className="btn" onClick={() => setEditingDesc(false)}>
+                    取消
+                  </button>
+                </div>
+              </>
+            ) : detail.description ? (
+              <Markdown className="desc-view">{detail.description}</Markdown>
+            ) : (
+              <button
+                className="desc-empty"
+                onClick={() => {
+                  setDraft('');
+                  setEditingDesc(true);
+                }}
+              >
+                点击添加描述…（支持 Markdown）
+              </button>
             )}
           </div>
 
@@ -206,19 +221,24 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
                       <b className={actorClass(a.actor)}>{actorLabel(a.actor)}</b> {actionText(a)}
                       <span className="tl-time">{rel(a.created_at)}</span>
                     </div>
-                    {(a.content || claimAgentInfo(a)) && (
-                      <div className="tl-content">{a.content || claimAgentInfo(a)}</div>
-                    )}
+                    {a.content ? (
+                      <Markdown className="tl-content">{a.content}</Markdown>
+                    ) : claimAgentInfo(a) ? (
+                      <div className="tl-content tl-plain">{claimAgentInfo(a)}</div>
+                    ) : null}
                   </div>
                 </li>
               ))}
             </ol>
             <div className="comment-box">
-              <input
-                placeholder="添加评论 / 补充说明…"
+              <textarea
+                rows={2}
+                placeholder="添加评论…（支持 Markdown，⌘/Ctrl+Enter 发送）"
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && submitComment()}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitComment();
+                }}
               />
               <button className="btn" onClick={submitComment} disabled={!comment.trim()}>
                 发送
