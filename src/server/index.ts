@@ -101,7 +101,9 @@ app.post('/api/tasks/:id/claim', async (c) => {
 
 app.post('/api/claim-next', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  return c.json(claimTask(null, actorOf(body), agentOf(body)));
+  // 可选 project：优先领取该项目（忽略大小写），无可领则全局兜底
+  const preferProject = typeof body?.project === 'string' ? body.project : '';
+  return c.json(claimTask(null, actorOf(body), agentOf(body), preferProject));
 });
 
 app.get('/api/next', (c) => c.json(peekNext()));

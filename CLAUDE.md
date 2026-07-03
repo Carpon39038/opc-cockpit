@@ -24,7 +24,7 @@
 
 ```bash
 ./opc list -s todo        # 看有什么可领（或 ./opc next 看下一个）
-./opc claim --model <你的模型ID>        # 领取优先级最高的任务（会打印完整描述和历史动态）
+./opc claim --model <你的模型ID>        # 自动领取：优先当前项目、本项目无可领则全局按优先级兜底（会打印完整描述和历史动态）
 ./opc claim T-3 --model <你的模型ID>    # 或领取指定任务
 ./opc progress T-3 "完成了 schema 设计，开始写 API"   # 干活期间随时汇报
 ./opc done T-3 -m "交付摘要：改了哪些文件、怎么验证的"  # 提交 → 进入「待审核」等用户确认

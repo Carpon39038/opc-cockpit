@@ -148,20 +148,40 @@ export interface AgentMeta {
 
 /**
  * 领取任务。id 为 null 时自动领取「待领取」列中优先级最高的未分配任务。
+ * 传 preferProject 时优先领取该项目（忽略大小写）的任务，本项目无可领则全局兜底。
  * 领取 = 设为自己 + 状态改为进行中，并记录工具名/模型名。
  */
-export function claimTask(id: number | null, actor: string, agent: AgentMeta = {}): Task {
+export function claimTask(
+  id: number | null,
+  actor: string,
+  agent: AgentMeta = {},
+  preferProject = ''
+): Task {
   const db = getDb();
   db.exec('BEGIN IMMEDIATE');
   try {
     let task: Task;
     if (id === null) {
-      const row = db
-        .prepare(
-          `SELECT * FROM tasks WHERE status = 'todo' AND assignee = ''
-           ORDER BY priority ASC, created_at ASC LIMIT 1`
-        )
-        .get() as Task | undefined;
+      let row: Task | undefined;
+      // 优先领取当前项目的任务（项目名忽略大小写）
+      if (preferProject.trim()) {
+        row = db
+          .prepare(
+            `SELECT * FROM tasks WHERE status = 'todo' AND assignee = ''
+             AND lower(project) = lower(?)
+             ORDER BY priority ASC, created_at ASC LIMIT 1`
+          )
+          .get(preferProject.trim()) as Task | undefined;
+      }
+      // 本项目无可领 → 全局兜底
+      if (!row) {
+        row = db
+          .prepare(
+            `SELECT * FROM tasks WHERE status = 'todo' AND assignee = ''
+             ORDER BY priority ASC, created_at ASC LIMIT 1`
+          )
+          .get() as Task | undefined;
+      }
       if (!row) throw new StoreError('当前没有可领取的任务（「待领取」列为空或都已分配）', 404);
       task = row;
     } else {

@@ -289,11 +289,19 @@ program
     const id = ref ? parseRef(ref) : null;
     const tool = opts.tool ?? detectTool();
     const model = opts.model ?? detectModel();
-    const t = claimTask(id, actor(), { tool, model });
+    // 自动领取时优先当前项目（忽略大小写），本项目无可领则全局兜底
+    const preferProject = id === null ? detectProject() : '';
+    const t = claimTask(id, actor(), { tool, model }, preferProject);
     const activity = getTaskActivity(t.id);
     out({ ...t, activity }, () => {
       const info = [tool, model].filter(Boolean).join(' · ');
-      console.log(`✓ ${actor()}${info ? `（${info}）` : ''} 已领取 ${taskRef(t.id)}，状态 → ${STATUS_LABELS[t.status]}\n`);
+      const crossProject =
+        preferProject && t.project && t.project.toLowerCase() !== preferProject.toLowerCase();
+      console.log(`✓ ${actor()}${info ? `（${info}）` : ''} 已领取 ${taskRef(t.id)}，状态 → ${STATUS_LABELS[t.status]}`);
+      if (crossProject) {
+        console.log(`  （当前项目 ${preferProject} 无可领任务，已跨项目领取 ${t.project}）`);
+      }
+      console.log('');
       printDetail(t, activity);
     });
   });
