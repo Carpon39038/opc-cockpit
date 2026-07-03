@@ -51,8 +51,21 @@ function actor(): string {
   const opts = program.opts<GlobalOpts>();
   if (opts.as) return opts.as;
   if (process.env.OPC_ACTOR) return process.env.OPC_ACTOR;
-  if (process.env.CLAUDECODE) return 'claude';
+  // 识别到 agent 工具时用对应的 agent 身份，而不是回落到「人」
+  const agent = detectAgentActor();
+  if (agent) return agent;
   return HUMAN_ACTOR;
+}
+
+/**
+ * 从检测到的工具推导 agent 身份名（claude-code → claude，gemini-cli → gemini）。
+ * 没识别到 agent 工具则返回空。与 detectTool() 共用同一套环境判断，保持一致。
+ */
+function detectAgentActor(): string {
+  const tool = detectTool();
+  if (!tool) return '';
+  if (tool === 'claude-code') return 'claude';
+  return tool.replace(/-cli$/, ''); // codex / cursor / gemini / aider
 }
 
 /** 自动识别当前运行环境的工具名 */
