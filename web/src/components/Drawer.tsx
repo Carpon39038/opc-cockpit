@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Status, Task } from '../../../src/shared/types';
+import type { DepSummary, Status, Task } from '../../../src/shared/types';
 import { KNOWLEDGE_TYPE_LABELS, PRIORITIES, STATUSES, STATUS_LABELS, kbRef, taskRef } from '../../../src/shared/types';
 import type { TaskDetail } from '../api';
 import { actionText, actorClass, actorLabel, claimAgentInfo, createAgentInfo, rel } from '../ui';
@@ -7,13 +7,17 @@ import { Markdown } from './Markdown';
 
 interface Props {
   detail: TaskDetail;
+  /** 全部任务，用作前置候选（同项目排前） */
+  allTasks: Task[];
   onClose: () => void;
   onPatch: (fields: Partial<Task> & { note?: string }) => void;
   onComment: (text: string) => void;
   onDelete: () => void;
+  onDeps: (body: { add?: number[]; remove?: number[] }) => void;
+  onOpenTask: (id: number) => void;
 }
 
-export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props) {
+export function Drawer({ detail, allTasks, onClose, onPatch, onComment, onDelete, onDeps, onOpenTask }: Props) {
   const [title, setTitle] = useState(detail.title);
   const [editingDesc, setEditingDesc] = useState(false);
   const [draft, setDraft] = useState('');
@@ -41,6 +45,29 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
     setComment('');
     onComment(text);
   };
+
+  const unmet = detail.deps.filter((d) => d.status !== 'done');
+  // 前置候选：排除自己、已完成、已是前置的；同项目排前
+  const depCandidates = allTasks
+    .filter((t) => t.id !== detail.id && t.status !== 'done' && !detail.deps.some((d) => d.id === t.id))
+    .sort((a, b) => Number(b.project === detail.project) - Number(a.project === detail.project) || a.id - b.id);
+
+  const DepRow = ({ d, removable }: { d: DepSummary; removable?: boolean }) => (
+    <div className="dep-row">
+      <button className="dep-link" onClick={() => onOpenTask(d.id)} title="查看该任务">
+        <span className={`dep-state ${d.status === 'done' ? 'dep-done' : ''}`}>
+          {d.status === 'done' ? '✓' : STATUS_LABELS[d.status]}
+        </span>
+        <span className="card-ref">{taskRef(d.id)}</span>
+        <span className="dep-title">{d.title}</span>
+      </button>
+      {removable && (
+        <button className="icon-btn" title="移除前置" onClick={() => onDeps({ remove: [d.id] })}>
+          ✕
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -153,6 +180,45 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
               </button>
             </div>
           )}
+
+          <div className="drawer-section">
+            <div className="section-label">
+              前置依赖
+              {unmet.length > 0 && <span className="dep-blocked-hint">🔒 被 {unmet.length} 个未完成任务阻塞</span>}
+            </div>
+            {detail.deps.length > 0 && (
+              <div className="dep-list">
+                {detail.deps.map((d) => (
+                  <DepRow key={d.id} d={d} removable />
+                ))}
+              </div>
+            )}
+            <select
+              className="dep-add"
+              value=""
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                if (id) onDeps({ add: [id] });
+              }}
+            >
+              <option value="">＋ 添加前置任务（完成后本任务才可领取）…</option>
+              {depCandidates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {taskRef(t.id)} {t.project && t.project !== detail.project ? `[${t.project}] ` : ''}{t.title}
+                </option>
+              ))}
+            </select>
+            {detail.dependents.length > 0 && (
+              <>
+                <div className="dep-sub">后续任务（等本任务完成后解锁）</div>
+                <div className="dep-list">
+                  {detail.dependents.map((d) => (
+                    <DepRow key={d.id} d={d} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
           <div className="drawer-section">
             <div className="section-label">

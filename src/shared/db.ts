@@ -83,6 +83,12 @@ export function getDb(): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge(project);
     CREATE INDEX IF NOT EXISTS idx_knowledge_task ON knowledge(task_id);
+    CREATE TABLE IF NOT EXISTS task_deps (
+      task_id INTEGER NOT NULL,
+      depends_on INTEGER NOT NULL,
+      PRIMARY KEY (task_id, depends_on)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS idx_deps_on ON task_deps(depends_on);
   `);
   migrate(db);
   return db;

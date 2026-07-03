@@ -2185,3 +2185,114 @@ textarea::placeholder {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 任务前置依赖 */
+
+.chip-blocked {
+  color: var(--amber);
+  border-color: rgba(245, 180, 83, 0.45);
+  background: rgba(245, 180, 83, 0.08);
+  white-space: nowrap;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: none;
+}
+
+.dep-blocked-hint {
+  margin-left: auto;
+  color: var(--amber);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.dep-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dep-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dep-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dep-link:hover {
+  background: var(--panel-3);
+}
+
+.dep-state {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--amber);
+  border: 1px solid rgba(245, 180, 83, 0.4);
+  border-radius: 3px;
+  padding: 0.5px 5px;
+  white-space: nowrap;
+}
+
+.dep-state.dep-done {
+  color: var(--green);
+  border-color: rgba(55, 217, 146, 0.4);
+}
+
+.dep-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dep-add {
+  width: 100%;
+  color: var(--dim);
+}
+
+.dep-sub {
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 4px;
+}
+
+.dep-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dep-chip {
+  border: 1px solid rgba(245, 180, 83, 0.45);
+  background: rgba(245, 180, 83, 0.08);
+  color: var(--amber);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dep-chip:hover {
+  border-color: var(--red);
+  color: var(--red);
+}

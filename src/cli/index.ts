@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { Command } from 'commander';
 import {
   Activity,
+  DepSummary,
   HUMAN_ACTOR,
   KNOWLEDGE_TYPE_ALIASES,
   KNOWLEDGE_TYPE_LABELS,
@@ -18,6 +19,7 @@ import {
   STATUSES,
   Status,
   Task,
+  blockedIds,
   kbRef,
   parseKbRef,
   parseRef,
@@ -25,12 +27,16 @@ import {
 } from '../shared/types';
 import {
   StoreError,
+  TaskWithUnlocked,
+  addDeps,
   addNote,
   claimTask,
   completeTask,
   createKnowledge,
   createTask,
   deleteKnowledge,
+  getDependents,
+  getDeps,
   getKnowledge,
   getProject,
   getTask,
@@ -41,6 +47,8 @@ import {
   moveTask,
   peekNext,
   relatedKnowledge,
+  removeDeps,
+  unmetDeps,
   updateKnowledge,
   updateProject,
   updateTask,
@@ -149,8 +157,29 @@ function fmtLine(t: Task): string {
   if (t.project) extras.push(`proj:${t.project}`);
   if (t.assignee) extras.push(`@${t.assignee}`);
   if (t.due_date) extras.push(`due:${t.due_date}`);
+  const blocked = blockedIds(t);
+  if (blocked.length) extras.push(`⛔等${blocked.map(taskRef).join(',')}`);
   if (extras.length) parts.push(`(${extras.join(' ')})`);
   return parts.join(' ');
+}
+
+/** 解析逗号/空格分隔的任务编号列表（如 "T-1,T-2"） */
+function parseRefList(refs: string): number[] {
+  return refs
+    .split(/[,，\s]+/)
+    .filter(Boolean)
+    .map(parseRef);
+}
+
+function fmtDep(d: DepSummary): string {
+  const mark = d.status === 'done' ? '✓' : '·';
+  return `${mark} ${taskRef(d.id).padEnd(6)} [${STATUS_LABELS[d.status]}] ${d.title}`;
+}
+
+function printUnlocked(t: TaskWithUnlocked) {
+  if (t.unlocked?.length) {
+    console.log(`  🔓 解锁了后续任务: ${t.unlocked.map((d) => `${taskRef(d.id)} ${d.title}`).join('、')}`);
+  }
 }
 
 function fmtActivity(a: Activity): string {
@@ -182,6 +211,9 @@ function fmtActivity(a: Activity): string {
     case 'knowledge':
       action = '沉淀了知识';
       break;
+    case 'dep':
+      action = '调整前置';
+      break;
     default:
       action = a.kind;
   }
@@ -203,7 +235,7 @@ function safeParse(s: string): Record<string, unknown> {
   }
 }
 
-function printDetail(t: Task, activity: Activity[], kb: KnowledgeEntry[] = []) {
+function printDetail(t: Task, activity: Activity[], kb: KnowledgeEntry[] = [], deps: DepSummary[] = [], dependents: DepSummary[] = []) {
   console.log(`${taskRef(t.id)} [${t.priority}] ${t.title}`);
   const agentInfo = [t.agent_tool, t.agent_model].filter(Boolean).join(' · ');
   const who = t.assignee ? `${t.assignee}${agentInfo ? `（${agentInfo}）` : ''}` : '未分配';
@@ -212,6 +244,15 @@ function printDetail(t: Task, activity: Activity[], kb: KnowledgeEntry[] = []) {
   if (t.description) {
     console.log('---');
     console.log(t.description);
+  }
+  if (deps.length) {
+    const unmet = deps.filter((d) => d.status !== 'done');
+    console.log(`--- 前置任务（${unmet.length ? `${unmet.length} 个未完成，本任务被阻塞` : '已全部完成'}）---`);
+    for (const d of deps) console.log('  ' + fmtDep(d));
+  }
+  if (dependents.length) {
+    console.log('--- 后续任务（等本任务完成后解锁）---');
+    for (const d of dependents) console.log('  ' + fmtDep(d));
   }
   if (activity.length) {
     console.log('--- 动态 ---');
@@ -308,7 +349,11 @@ program
     const t = getTask(id);
     const activity = getTaskActivity(id);
     const kb = relatedKnowledge(t.project);
-    out({ ...t, activity, related_knowledge: kb }, () => printDetail(t, activity, kb));
+    const deps = getDeps(id);
+    const dependents = getDependents(id);
+    out({ ...t, deps, dependents, activity, related_knowledge: kb }, () =>
+      printDetail(t, activity, kb, deps, dependents)
+    );
   });
 
 program
@@ -319,9 +364,10 @@ program
   .option('--project <project>', '所属项目')
   .option('-s, --status <status>', '初始状态', 'todo')
   .option('--due <date>', '截止日期 YYYY-MM-DD')
+  .option('--after <refs>', '前置任务（逗号分隔，如 T-1,T-2），全部完成后本任务才可领取')
   .option('--tool <tool>', '创建者工具名（默认自动识别，如 claude-code）')
   .option('--model <model>', '创建者模型 ID（AI 创建时传自己的模型，如 claude-fable-5）')
-  .action((title: string, opts: { desc?: string; priority: string; project?: string; status: string; due?: string; tool?: string; model?: string }) => {
+  .action((title: string, opts: { desc?: string; priority: string; project?: string; status: string; due?: string; after?: string; tool?: string; model?: string }) => {
     const autoProject = opts.project === undefined ? detectProject() : '';
     const tool = opts.tool ?? detectTool();
     const model = opts.model ?? '';
@@ -336,11 +382,14 @@ program
         status: resolveStatus(opts.status),
         due_date: opts.due,
         creator,
+        deps: opts.after ? parseRefList(opts.after) : undefined,
       },
       actor()
     );
     out(t, () => {
       console.log(`✓ 已创建 ${fmtLine(t)} → ${STATUS_LABELS[t.status]}`);
+      const blocked = blockedIds(t);
+      if (blocked.length) console.log(`  前置: ${blocked.map(taskRef).join('、')} 完成后才可领取`);
       if (autoProject) console.log(`  （项目 ${autoProject} 自动识别自 git 仓库，--project 可覆盖）`);
     });
   });
@@ -359,7 +408,9 @@ program
     const t = claimTask(id, actor(), { tool, model }, preferProject);
     const activity = getTaskActivity(t.id);
     const kb = relatedKnowledge(t.project);
-    out({ ...t, activity, related_knowledge: kb }, () => {
+    const deps = getDeps(t.id);
+    const dependents = getDependents(t.id);
+    out({ ...t, deps, dependents, activity, related_knowledge: kb }, () => {
       const info = [tool, model].filter(Boolean).join(' · ');
       const crossProject =
         preferProject && t.project && t.project.toLowerCase() !== preferProject.toLowerCase();
@@ -368,7 +419,7 @@ program
         console.log(`  （当前项目 ${preferProject} 无可领任务，已跨项目领取 ${t.project}）`);
       }
       console.log('');
-      printDetail(t, activity, kb);
+      printDetail(t, activity, kb, deps, dependents);
     });
   });
 
@@ -394,7 +445,10 @@ program
   .option('-m, --message <message>', '附加说明')
   .action((ref: string, status: string, opts: { message?: string }) => {
     const t = moveTask(parseRef(ref), resolveStatus(status), actor(), opts.message || '');
-    out(t, () => console.log(`✓ ${taskRef(t.id)} → ${STATUS_LABELS[t.status]}`));
+    out(t, () => {
+      console.log(`✓ ${taskRef(t.id)} → ${STATUS_LABELS[t.status]}`);
+      printUnlocked(t);
+    });
   });
 
 program
@@ -407,6 +461,7 @@ program
     out(t, () => {
       const hint = t.status === 'review' ? '（等待用户在看板上审核确认）' : '';
       console.log(`✓ ${taskRef(t.id)} → ${STATUS_LABELS[t.status]} ${hint}`);
+      printUnlocked(t);
       console.log(`  这次有踩坑/搜到关键资料/值得复用的经验？opc kb add "标题" -d "细节" --type pitfall --task ${taskRef(t.id)} 沉淀下来`);
     });
   });
@@ -434,6 +489,37 @@ program
       actor()
     );
     out(t, () => console.log(`✓ 已更新 ${fmtLine(t)}`));
+  });
+
+program
+  .command('dep <ref>')
+  .description('查看/管理前置依赖：不带选项查看，--on 添加，--rm 移除')
+  .option('--on <refs>', '添加前置任务，逗号分隔，如 T-1,T-2')
+  .option('--rm <refs>', '移除前置任务，逗号分隔')
+  .action((ref: string, opts: { on?: string; rm?: string }) => {
+    const id = parseRef(ref);
+    let t = getTask(id);
+    if (opts.on) t = addDeps(id, parseRefList(opts.on), actor());
+    if (opts.rm) t = removeDeps(id, parseRefList(opts.rm), actor());
+    const deps = getDeps(id);
+    const dependents = getDependents(id);
+    const blocked = unmetDeps(id).length > 0;
+    out({ ...t, deps, dependents, blocked }, () => {
+      if (opts.on || opts.rm) console.log(`✓ 已更新 ${taskRef(id)} 的前置依赖\n`);
+      console.log(`${taskRef(t.id)} [${STATUS_LABELS[t.status]}] ${t.title}`);
+      if (!deps.length && !dependents.length) {
+        console.log('（没有依赖关系；opc dep ' + taskRef(id) + ' --on T-x 添加前置）');
+        return;
+      }
+      if (deps.length) {
+        console.log(`前置任务${blocked ? '（有未完成，本任务被阻塞）' : '（已全部完成）'}:`);
+        for (const d of deps) console.log('  ' + fmtDep(d));
+      }
+      if (dependents.length) {
+        console.log('后续任务（等本任务完成后解锁）:');
+        for (const d of dependents) console.log('  ' + fmtDep(d));
+      }
+    });
   });
 
 function fmtProjectStats(p: ProjectWithStats): string {

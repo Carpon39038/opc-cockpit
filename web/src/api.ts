@@ -1,6 +1,11 @@
-import type { Activity, KnowledgeEntry, Project, ProjectWithStats, Task } from '../../src/shared/types';
+import type { Activity, DepSummary, KnowledgeEntry, Project, ProjectWithStats, Task } from '../../src/shared/types';
 
-export type TaskDetail = Task & { activity: Activity[]; knowledge: KnowledgeEntry[] };
+export type TaskDetail = Task & {
+  activity: Activity[];
+  knowledge: KnowledgeEntry[];
+  deps: DepSummary[];
+  dependents: DepSummary[];
+};
 export type ProjectDetail = Project & { tasks: Task[] };
 export type ProjectPatch = Partial<Pick<Project, 'goal' | 'status' | 'next_step' | 'blockers'>>;
 export type KbPatch = Partial<
@@ -26,7 +31,10 @@ export const api = {
   tasks: () => fetch('/api/tasks').then((r) => j<Task[]>(r)),
   detail: (id: number) => fetch(`/api/tasks/${id}`).then((r) => j<TaskDetail>(r)),
   activity: (limit = 40) => fetch(`/api/activity?limit=${limit}`).then((r) => j<Activity[]>(r)),
-  create: (input: Partial<Task>) => post('/api/tasks', input).then((r) => j<Task>(r)),
+  create: (input: Partial<Task> & { deps?: number[] }) => post('/api/tasks', input).then((r) => j<Task>(r)),
+  // 增删前置依赖
+  setDeps: (id: number, body: { add?: number[]; remove?: number[] }) =>
+    post(`/api/tasks/${id}/deps`, body).then((r) => j<Task>(r)),
   // 状态变更（可带 note）和字段更新共用 PATCH
   patch: (id: number, fields: Partial<Task> & { note?: string }) =>
     post(`/api/tasks/${id}`, fields, 'PATCH').then((r) => j<Task>(r)),

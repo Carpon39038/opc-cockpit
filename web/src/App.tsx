@@ -96,8 +96,9 @@ export default function App() {
         await fn();
         await refresh();
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        // 先刷新再设错误：refresh 成功路径会清空 error，顺序反了错误会被立即冲掉
         await refresh();
+        setError(e instanceof Error ? e.message : String(e));
       }
     },
     [refresh]
@@ -188,6 +189,7 @@ export default function App() {
       {detail && (
         <Drawer
           detail={detail}
+          allTasks={tasks}
           onClose={closeDrawer}
           onPatch={(fields) => mutate(() => api.patch(detail.id, fields))}
           onComment={(text) => mutate(() => api.comment(detail.id, text))}
@@ -195,6 +197,8 @@ export default function App() {
             mutate(() => api.remove(detail.id));
             closeDrawer();
           }}
+          onDeps={(body) => mutate(() => api.setDeps(detail.id, body))}
+          onOpenTask={openTask}
         />
       )}
 
@@ -202,6 +206,7 @@ export default function App() {
         <NewTaskModal
           presetStatus={newStatus}
           projects={[...new Set([...projects.map((p) => p.name), ...tasks.map((t) => t.project)])].filter(Boolean).sort()}
+          tasks={tasks}
           onClose={() => setNewStatus(null)}
           onCreate={(input) => {
             setNewStatus(null);

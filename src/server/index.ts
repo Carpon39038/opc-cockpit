@@ -8,6 +8,7 @@ import { HUMAN_ACTOR } from '../shared/types';
 import { findRepoRoot } from '../shared/db';
 import {
   StoreError,
+  addDeps,
   addNote,
   claimTask,
   completeTask,
@@ -16,6 +17,8 @@ import {
   deleteKnowledge,
   deleteProject,
   deleteTask,
+  getDependents,
+  getDeps,
   getKnowledge,
   getProject,
   getTask,
@@ -27,6 +30,7 @@ import {
   moveTask,
   peekNext,
   recentActivity,
+  removeDeps,
   updateKnowledge,
   updateProject,
   updateTask,
@@ -56,12 +60,21 @@ app.get('/api/tasks', (c) => {
 
 app.post('/api/tasks', async (c) => {
   const body = await c.req.json();
-  return c.json(createTask(body, actorOf(body)), 201);
+  const deps = Array.isArray(body.deps)
+    ? body.deps.map(Number).filter((n: number) => Number.isInteger(n) && n > 0)
+    : undefined;
+  return c.json(createTask({ ...body, deps }, actorOf(body)), 201);
 });
 
 app.get('/api/tasks/:id', (c) => {
   const id = Number(c.req.param('id'));
-  return c.json({ ...getTask(id), activity: getTaskActivity(id), knowledge: listKnowledge({ task_id: id }) });
+  return c.json({
+    ...getTask(id),
+    deps: getDeps(id),
+    dependents: getDependents(id),
+    activity: getTaskActivity(id),
+    knowledge: listKnowledge({ task_id: id }),
+  });
 });
 
 app.patch('/api/tasks/:id', async (c) => {
@@ -90,6 +103,19 @@ app.patch('/api/tasks/:id', async (c) => {
 app.delete('/api/tasks/:id', (c) => {
   deleteTask(Number(c.req.param('id')));
   return c.json({ ok: true });
+});
+
+// 增删前置依赖：body { add?: number[], remove?: number[] }，返回最新依赖
+app.post('/api/tasks/:id/deps', async (c) => {
+  const id = Number(c.req.param('id'));
+  const body = await c.req.json();
+  const actor = actorOf(body);
+  const ids = (v: unknown) => (Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);
+  const add = ids(body.add);
+  const remove = ids(body.remove);
+  if (add.length) addDeps(id, add, actor);
+  if (remove.length) removeDeps(id, remove, actor);
+  return c.json({ ...getTask(id), deps: getDeps(id), dependents: getDependents(id) });
 });
 
 function agentOf(body: Record<string, unknown>): { tool?: string; model?: string } {

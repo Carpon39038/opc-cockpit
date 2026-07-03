@@ -40,6 +40,20 @@ export interface Task {
   updated_at: string;
   claimed_at: string;
   completed_at: string;
+  /** 查询时附带：未完成的前置任务 id（逗号分隔），null/空 = 未被阻塞 */
+  blocked_by?: string | null;
+}
+
+/** 依赖关系里引用的任务概要 */
+export interface DepSummary {
+  id: number;
+  title: string;
+  status: Status;
+}
+
+/** 从 blocked_by 字段解析出未完成前置任务的 id 列表 */
+export function blockedIds(t: Pick<Task, 'blocked_by'>): number[] {
+  return t.blocked_by ? t.blocked_by.split(',').map(Number) : [];
 }
 
 export type ActivityKind =
@@ -50,7 +64,8 @@ export type ActivityKind =
   | 'comment'
   | 'updated'
   | 'completed'
-  | 'knowledge';
+  | 'knowledge'
+  | 'dep';
 
 export interface Activity {
   id: number;

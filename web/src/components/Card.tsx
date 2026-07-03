@@ -1,5 +1,5 @@
 import type { Task } from '../../../src/shared/types';
-import { isAgent, taskRef } from '../../../src/shared/types';
+import { blockedIds, isAgent, taskRef } from '../../../src/shared/types';
 import { isOverdue } from '../ui';
 
 interface Props {
@@ -12,6 +12,7 @@ export function Card({ task, onClick, onApprove }: Props) {
   const working = task.status === 'in_progress' && isAgent(task.assignee);
   const overdue = isOverdue(task.due_date) && task.status !== 'done';
   const agentInfo = [task.agent_tool, task.agent_model].filter(Boolean).join(' · ');
+  const blocked = task.status !== 'done' ? blockedIds(task) : [];
 
   return (
     <article
@@ -29,6 +30,11 @@ export function Card({ task, onClick, onApprove }: Props) {
       </div>
       <h3 className="card-title">{task.title}</h3>
       <div className="card-meta">
+        {blocked.length > 0 && (
+          <span className="chip chip-blocked" title={`等待 ${blocked.map(taskRef).join('、')} 完成后才可领取`}>
+            🔒{blocked.map(taskRef).join(' ')}
+          </span>
+        )}
         {task.project && <span className="tag">{task.project}</span>}
         {task.due_date && (
           <span className={`due ${overdue ? 'due-over' : ''}`}>

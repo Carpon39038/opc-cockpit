@@ -2,6 +2,7 @@ import { getDb } from './db';
 import {
   Activity,
   ActivityKind,
+  DepSummary,
   HUMAN_ACTOR,
   KNOWLEDGE_TYPES,
   KnowledgeEntry,
@@ -13,6 +14,7 @@ import {
   ProjectStatus,
   ProjectWithStats,
   STATUSES,
+  STATUS_LABELS,
   Status,
   Task,
   isAgent,
@@ -50,8 +52,21 @@ function log(taskId: number, actor: string, kind: ActivityKind, content = '', me
     .run(taskId, actor, kind, content, JSON.stringify(meta), now());
 }
 
+/** 任务查询都附带 blocked_by：未完成前置任务的 id 逗号串（null = 未被阻塞） */
+const TASK_SELECT = `SELECT tasks.*, (
+    SELECT group_concat(d.depends_on) FROM task_deps d
+    JOIN tasks p ON p.id = d.depends_on
+    WHERE d.task_id = tasks.id AND p.status != 'done'
+  ) AS blocked_by FROM tasks`;
+
+/** 就绪条件：不存在未完成的前置任务（自动领取 / next 的 SQL 过滤） */
+const NOT_BLOCKED = `NOT EXISTS (
+    SELECT 1 FROM task_deps d JOIN tasks p ON p.id = d.depends_on
+    WHERE d.task_id = tasks.id AND p.status != 'done'
+  )`;
+
 export function getTask(id: number): Task {
-  const row = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task | undefined;
+  const row = getDb().prepare(`${TASK_SELECT} WHERE tasks.id = ?`).get(id) as Task | undefined;
   if (!row) throw new StoreError(`任务 ${taskRef(id)} 不存在`, 404);
   return row;
 }
@@ -96,9 +111,108 @@ export function listTasks(filters: ListFilters = {}): Task[] {
     where.push('(title LIKE ? OR description LIKE ?)');
     params.push(`%${filters.q}%`, `%${filters.q}%`);
   }
-  const sql = `SELECT * FROM tasks ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+  const sql = `${TASK_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY priority ASC, updated_at DESC`;
   return getDb().prepare(sql).all(...params) as unknown as Task[];
+}
+
+// ---------------- 依赖 ----------------
+
+/** 前置任务（本任务依赖谁） */
+export function getDeps(id: number): DepSummary[] {
+  return getDb()
+    .prepare(
+      `SELECT t.id, t.title, t.status FROM task_deps d
+       JOIN tasks t ON t.id = d.depends_on WHERE d.task_id = ? ORDER BY t.id`
+    )
+    .all(id) as unknown as DepSummary[];
+}
+
+/** 后续任务（谁依赖本任务） */
+export function getDependents(id: number): DepSummary[] {
+  return getDb()
+    .prepare(
+      `SELECT t.id, t.title, t.status FROM task_deps d
+       JOIN tasks t ON t.id = d.task_id WHERE d.depends_on = ? ORDER BY t.id`
+    )
+    .all(id) as unknown as DepSummary[];
+}
+
+/** 未完成的前置任务（非空 = 被阻塞，不可领取） */
+export function unmetDeps(id: number): DepSummary[] {
+  return getDeps(id).filter((d) => d.status !== 'done');
+}
+
+/** a 是否（直接或间接）依赖 b —— 加依赖前的环检测 */
+function dependsOn(a: number, b: number): boolean {
+  const stmt = getDb().prepare('SELECT depends_on FROM task_deps WHERE task_id = ?');
+  const seen = new Set<number>();
+  const queue = [a];
+  while (queue.length) {
+    const cur = queue.pop()!;
+    if (cur === b) return true;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const row of stmt.all(cur) as { depends_on: number }[]) queue.push(row.depends_on);
+  }
+  return false;
+}
+
+/** 添加前置依赖（幂等，重复添加忽略）。拒绝自依赖和环。 */
+export function addDeps(taskId: number, depIds: number[], actor: string): Task {
+  getTask(taskId);
+  const db = getDb();
+  const added: number[] = [];
+  for (const depId of [...new Set(depIds)]) {
+    if (depId === taskId) throw new StoreError(`${taskRef(taskId)} 不能依赖自己`);
+    getTask(depId); // 不存在则 404
+    if (dependsOn(depId, taskId)) {
+      throw new StoreError(
+        `${taskRef(depId)} 已（直接或间接）依赖 ${taskRef(taskId)}，反向添加会成环`,
+        409
+      );
+    }
+    const r = db
+      .prepare('INSERT OR IGNORE INTO task_deps (task_id, depends_on) VALUES (?, ?)')
+      .run(taskId, depId);
+    if (Number(r.changes) > 0) added.push(depId);
+  }
+  if (added.length) {
+    db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(now(), taskId);
+    log(taskId, actor, 'dep', `添加前置 ${added.map(taskRef).join('、')}`, { op: 'add', deps: added });
+  }
+  return getTask(taskId);
+}
+
+/** 移除前置依赖 */
+export function removeDeps(taskId: number, depIds: number[], actor: string): Task {
+  getTask(taskId);
+  const db = getDb();
+  const removed: number[] = [];
+  for (const depId of [...new Set(depIds)]) {
+    const r = db.prepare('DELETE FROM task_deps WHERE task_id = ? AND depends_on = ?').run(taskId, depId);
+    if (Number(r.changes) > 0) removed.push(depId);
+  }
+  if (removed.length) {
+    db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(now(), taskId);
+    log(taskId, actor, 'dep', `移除前置 ${removed.map(taskRef).join('、')}`, { op: 'remove', deps: removed });
+  }
+  return getTask(taskId);
+}
+
+/** 因某任务完成而解锁的下游任务（此前被它挡住、现在全部前置就绪的待办） */
+function unlockedBy(id: number): DepSummary[] {
+  return getDb()
+    .prepare(
+      `SELECT t.id, t.title, t.status FROM task_deps d
+       JOIN tasks t ON t.id = d.task_id
+       WHERE d.depends_on = ? AND t.status IN ('backlog', 'todo')
+       AND NOT EXISTS (
+         SELECT 1 FROM task_deps d2 JOIN tasks p ON p.id = d2.depends_on
+         WHERE d2.task_id = t.id AND p.status != 'done'
+       ) ORDER BY t.id`
+    )
+    .all(id) as unknown as DepSummary[];
 }
 
 export interface CreateInput {
@@ -110,6 +224,7 @@ export interface CreateInput {
   due_date?: string;
   assignee?: string;
   creator?: string; // 创建者的工具·模型（AI 创建时自填，人创建为空）
+  deps?: number[]; // 前置任务 id（全部完成后本任务才可领取）
 }
 
 export function createTask(input: CreateInput, actor: string): Task {
@@ -119,6 +234,7 @@ export function createTask(input: CreateInput, actor: string): Task {
   const priority = input.priority || 'P2';
   assertStatus(status);
   assertPriority(priority);
+  for (const depId of input.deps ?? []) getTask(depId); // 前置必须存在，先校验再建
   const ts = now();
   const creator = input.creator || '';
   const result = getDb()
@@ -141,6 +257,7 @@ export function createTask(input: CreateInput, actor: string): Task {
   const id = Number(result.lastInsertRowid);
   if (input.project) ensureProject(input.project);
   log(id, actor, 'created', title, { status, priority, creator });
+  if (input.deps?.length) addDeps(id, input.deps, actor);
   return getTask(id);
 }
 
@@ -167,12 +284,12 @@ export function claimTask(
     let task: Task;
     if (id === null) {
       let row: Task | undefined;
-      // 优先领取当前项目的任务（项目名忽略大小写）
+      // 优先领取当前项目的任务（项目名忽略大小写）；被前置阻塞的任务自动跳过
       if (preferProject.trim()) {
         row = db
           .prepare(
             `SELECT * FROM tasks WHERE status = 'todo' AND assignee = ''
-             AND lower(project) = lower(?)
+             AND lower(project) = lower(?) AND ${NOT_BLOCKED}
              ORDER BY priority ASC, created_at ASC LIMIT 1`
           )
           .get(preferProject.trim()) as Task | undefined;
@@ -181,18 +298,26 @@ export function claimTask(
       if (!row) {
         row = db
           .prepare(
-            `SELECT * FROM tasks WHERE status = 'todo' AND assignee = ''
+            `SELECT * FROM tasks WHERE status = 'todo' AND assignee = '' AND ${NOT_BLOCKED}
              ORDER BY priority ASC, created_at ASC LIMIT 1`
           )
           .get() as Task | undefined;
       }
-      if (!row) throw new StoreError('当前没有可领取的任务（「待领取」列为空或都已分配）', 404);
+      if (!row) throw new StoreError('当前没有可领取的任务（「待领取」列为空、都已分配或都被前置任务阻塞）', 404);
       task = row;
     } else {
       task = getTask(id);
       if (task.status === 'done') throw new StoreError(`${taskRef(task.id)} 已完成，无法领取`, 409);
       if (task.assignee && task.assignee !== actor) {
         throw new StoreError(`${taskRef(task.id)} 已被 ${task.assignee} 领取`, 409);
+      }
+      const unmet = unmetDeps(task.id);
+      if (unmet.length) {
+        const detail = unmet.map((d) => `${taskRef(d.id)}[${STATUS_LABELS[d.status]}]`).join('、');
+        throw new StoreError(
+          `${taskRef(task.id)} 被前置任务阻塞：${detail} 未完成。先做前置任务，或确认不需要后用 opc dep ${taskRef(task.id)} --rm <编号> 解除`,
+          409
+        );
       }
     }
     const ts = now();
@@ -214,11 +339,11 @@ export function claimTask(
   }
 }
 
-/** 查看下一个可领取的任务（不产生任何变更） */
+/** 查看下一个可领取的任务（不产生任何变更；跳过被前置阻塞的） */
 export function peekNext(): Task | null {
   const row = getDb()
     .prepare(
-      `SELECT * FROM tasks WHERE status = 'todo' AND assignee = ''
+      `SELECT * FROM tasks WHERE status = 'todo' AND assignee = '' AND ${NOT_BLOCKED}
        ORDER BY priority ASC, created_at ASC LIMIT 1`
     )
     .get() as Task | undefined;
@@ -234,8 +359,11 @@ export function addNote(id: number, actor: string, content: string, kind: 'progr
   return getTask(task.id);
 }
 
-/** 移动状态。移回 todo/backlog 时自动释放认领。 */
-export function moveTask(id: number, to: string, actor: string, note = ''): Task {
+/** 任务 + 因它完成而解锁的下游任务（done 时附带，供调用方提示） */
+export type TaskWithUnlocked = Task & { unlocked?: DepSummary[] };
+
+/** 移动状态。移回 todo/backlog 时自动释放认领；移到 done 时附带解锁的下游任务。 */
+export function moveTask(id: number, to: string, actor: string, note = ''): TaskWithUnlocked {
   assertStatus(to);
   const task = getTask(id);
   if (task.status === to) return task;
@@ -252,14 +380,19 @@ export function moveTask(id: number, to: string, actor: string, note = ''): Task
     )
     .run(to, ts, to === 'done' ? ts : '', release ? 1 : 0, release ? 1 : 0, release ? 1 : 0, release ? 1 : 0, task.id);
   log(task.id, actor, 'status', note, { from: task.status, to });
-  return getTask(task.id);
+  const result: TaskWithUnlocked = getTask(task.id);
+  if (to === 'done') {
+    const unlocked = unlockedBy(task.id);
+    if (unlocked.length) result.unlocked = unlocked;
+  }
+  return result;
 }
 
 /**
  * 完成任务。
  * Agent 完成默认进入「待审核」，由用户在看板上确认；人完成或 skipReview 时直接到「已完成」。
  */
-export function completeTask(id: number, actor: string, summary = '', skipReview = false): Task {
+export function completeTask(id: number, actor: string, summary = '', skipReview = false): TaskWithUnlocked {
   const task = getTask(id);
   if (task.status === 'done') throw new StoreError(`${taskRef(task.id)} 已经是完成状态`, 409);
   const toReview = isAgent(actor) && !skipReview;
@@ -269,7 +402,12 @@ export function completeTask(id: number, actor: string, summary = '', skipReview
     .prepare(`UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?`)
     .run(to, ts, to === 'done' ? ts : '', task.id);
   log(task.id, actor, 'completed', summary, { from: task.status, to });
-  return getTask(task.id);
+  const result: TaskWithUnlocked = getTask(task.id);
+  if (to === 'done') {
+    const unlocked = unlockedBy(task.id);
+    if (unlocked.length) result.unlocked = unlocked;
+  }
+  return result;
 }
 
 export interface UpdateInput {
@@ -315,6 +453,7 @@ export function deleteTask(id: number): void {
   getTask(id); // 不存在则抛 404
   const db = getDb();
   db.prepare('DELETE FROM activity WHERE task_id = ?').run(id);
+  db.prepare('DELETE FROM task_deps WHERE task_id = ? OR depends_on = ?').run(id, id);
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
 }
 

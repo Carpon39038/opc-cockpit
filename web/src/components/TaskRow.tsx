@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Task } from '../../../src/shared/types';
-import { isAgent, taskRef } from '../../../src/shared/types';
+import { blockedIds, isAgent, taskRef } from '../../../src/shared/types';
 import { isOverdue } from '../ui';
 
 interface Props {
@@ -15,11 +15,17 @@ interface Props {
 /** 首页用的紧凑任务行 */
 export function TaskRow({ task, onClick, extra, note }: Props) {
   const overdue = isOverdue(task.due_date) && task.status !== 'done';
+  const blocked = task.status !== 'done' ? blockedIds(task) : [];
   return (
     <div className="trow" onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
       <span className="card-ref">{taskRef(task.id)}</span>
       <span className={`chip chip-${task.priority.toLowerCase()}`}>{task.priority}</span>
       <span className="trow-main">
+        {blocked.length > 0 && (
+          <span className="chip chip-blocked" title={`等待 ${blocked.map(taskRef).join('、')} 完成后才可领取`}>
+            🔒{blocked.map(taskRef).join(' ')}
+          </span>
+        )}
         <span className="trow-title">{task.title}</span>
         {note && <span className="trow-note">{note}</span>}
       </span>
