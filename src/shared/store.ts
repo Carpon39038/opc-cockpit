@@ -3,6 +3,9 @@ import {
   Activity,
   ActivityKind,
   HUMAN_ACTOR,
+  KNOWLEDGE_TYPES,
+  KnowledgeEntry,
+  KnowledgeType,
   PRIORITIES,
   Priority,
   PROJECT_STATUSES,
@@ -13,6 +16,7 @@ import {
   Status,
   Task,
   isAgent,
+  kbRef,
   taskRef,
 } from './types';
 
@@ -433,4 +437,171 @@ export function deleteProject(name: string): void {
   if (count > 0) throw new StoreError(`项目「${name}」下还有 ${count} 个任务，不能删除（可将状态改为已完成）`, 409);
   const r = getDb().prepare('DELETE FROM projects WHERE name = ?').run(name);
   if (Number(r.changes) === 0) throw new StoreError(`项目「${name}」不存在`, 404);
+}
+
+// ---------------- 知识库 ----------------
+
+function assertKnowledgeType(t: string): asserts t is KnowledgeType {
+  if (!KNOWLEDGE_TYPES.includes(t as KnowledgeType)) {
+    throw new StoreError(`无效知识类型: ${t}（可选: ${KNOWLEDGE_TYPES.join(', ')}）`);
+  }
+}
+
+/** tags 规范化：逗号/顿号分隔 → trim、去空、去重，存回逗号分隔 */
+function normalizeTags(tags: string): string {
+  return [...new Set(tags.split(/[,，、]/).map((t) => t.trim()).filter(Boolean))].join(',');
+}
+
+const KB_SELECT = `SELECT k.*, t.title AS task_title FROM knowledge k
+  LEFT JOIN tasks t ON t.id = k.task_id`;
+
+export function getKnowledge(id: number): KnowledgeEntry {
+  const row = getDb().prepare(`${KB_SELECT} WHERE k.id = ?`).get(id) as KnowledgeEntry | undefined;
+  if (!row) throw new StoreError(`知识条目 ${kbRef(id)} 不存在`, 404);
+  return row;
+}
+
+export interface KnowledgeFilters {
+  type?: string;
+  project?: string;
+  tag?: string;
+  q?: string;
+  task_id?: number;
+}
+
+export function listKnowledge(filters: KnowledgeFilters = {}): KnowledgeEntry[] {
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  if (filters.type) {
+    assertKnowledgeType(filters.type);
+    where.push('k.type = ?');
+    params.push(filters.type);
+  }
+  if (filters.project) {
+    where.push('lower(k.project) = lower(?)');
+    params.push(filters.project);
+  }
+  if (filters.tag) {
+    where.push("(',' || k.tags || ',') LIKE ('%,' || ? || ',%')");
+    params.push(filters.tag.trim());
+  }
+  if (filters.task_id) {
+    where.push('k.task_id = ?');
+    params.push(filters.task_id);
+  }
+  if (filters.q) {
+    where.push('(k.title LIKE ? OR k.body LIKE ? OR k.tags LIKE ?)');
+    const kw = `%${filters.q}%`;
+    params.push(kw, kw, kw);
+  }
+  const sql = `${KB_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY k.updated_at DESC`;
+  return getDb().prepare(sql).all(...params) as unknown as KnowledgeEntry[];
+}
+
+/** 领任务时带出的相关知识：同项目 ∪ 通用（project=''），最近更新在前 */
+export function relatedKnowledge(project: string, limit = 8): KnowledgeEntry[] {
+  const p = project.trim();
+  if (!p) {
+    return getDb()
+      .prepare(`${KB_SELECT} WHERE k.project = '' ORDER BY k.updated_at DESC LIMIT ?`)
+      .all(limit) as unknown as KnowledgeEntry[];
+  }
+  return getDb()
+    .prepare(
+      `${KB_SELECT} WHERE lower(k.project) = lower(?) OR k.project = ''
+       ORDER BY k.updated_at DESC LIMIT ?`
+    )
+    .all(p, limit) as unknown as KnowledgeEntry[];
+}
+
+export interface KnowledgeCreateInput {
+  type?: string;
+  title: string;
+  body?: string;
+  tags?: string;
+  project?: string;
+  task_id?: number;
+  source_url?: string;
+  creator?: string;
+}
+
+export function createKnowledge(input: KnowledgeCreateInput, actor: string): KnowledgeEntry {
+  const title = input.title?.trim();
+  if (!title) throw new StoreError('标题不能为空');
+  const type = input.type || 'knowledge';
+  assertKnowledgeType(type);
+  const taskId = input.task_id || 0;
+  if (taskId) getTask(taskId); // 关联任务必须存在
+  const ts = now();
+  const result = getDb()
+    .prepare(
+      `INSERT INTO knowledge (type, title, body, tags, project, task_id, source_url, creator, actor, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      type,
+      title,
+      input.body || '',
+      normalizeTags(input.tags || ''),
+      input.project?.trim() || '',
+      taskId,
+      input.source_url?.trim() || '',
+      input.creator || '',
+      actor,
+      ts,
+      ts
+    );
+  const id = Number(result.lastInsertRowid);
+  if (input.project?.trim()) ensureProject(input.project);
+  // 关联任务时在任务动态里留痕，看板运行日志可见
+  if (taskId) log(taskId, actor, 'knowledge', `${kbRef(id)} ${title}`, { kb_id: id, kb_type: type });
+  return getKnowledge(id);
+}
+
+export interface KnowledgeUpdateInput {
+  type?: string;
+  title?: string;
+  body?: string;
+  tags?: string;
+  project?: string;
+  task_id?: number;
+  source_url?: string;
+}
+
+export function updateKnowledge(id: number, input: KnowledgeUpdateInput, actor: string): KnowledgeEntry {
+  const entry = getKnowledge(id);
+  if (input.type !== undefined) assertKnowledgeType(input.type);
+  if (input.task_id) getTask(input.task_id);
+  const fields: string[] = [];
+  const params: (string | number)[] = [];
+  const apply = (key: string, value: string | number | undefined) => {
+    if (value === undefined || value === (entry as unknown as Record<string, string | number>)[key]) return;
+    fields.push(`${key} = ?`);
+    params.push(value);
+  };
+  apply('type', input.type);
+  apply('title', input.title?.trim());
+  apply('body', input.body);
+  apply('tags', input.tags === undefined ? undefined : normalizeTags(input.tags));
+  apply('project', input.project === undefined ? undefined : input.project.trim());
+  apply('task_id', input.task_id);
+  apply('source_url', input.source_url === undefined ? undefined : input.source_url.trim());
+  if (!fields.length) return entry;
+  params.push(now(), id);
+  getDb().prepare(`UPDATE knowledge SET ${fields.join(', ')}, updated_at = ? WHERE id = ?`).run(...params);
+  if (input.project?.trim()) ensureProject(input.project);
+  // 新关联任务时留痕（原来没关联、现在关联上）
+  if (input.task_id && input.task_id !== entry.task_id) {
+    log(input.task_id, actor, 'knowledge', `${kbRef(id)} ${input.title?.trim() || entry.title}`, {
+      kb_id: id,
+      kb_type: input.type || entry.type,
+    });
+  }
+  return getKnowledge(id);
+}
+
+export function deleteKnowledge(id: number): void {
+  getKnowledge(id); // 不存在则抛 404
+  getDb().prepare('DELETE FROM knowledge WHERE id = ?').run(id);
 }

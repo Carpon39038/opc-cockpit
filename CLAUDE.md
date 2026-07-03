@@ -1,6 +1,6 @@
 # OPC Cockpit
 
-一人公司驾驶舱。当前已实现：驾驶舱首页 + 任务看板（Web UI + `opc` CLI + SQLite），AI Agent 是一等公民工作者。
+一人公司驾驶舱。当前已实现：驾驶舱首页 + 任务看板 + 知识库（Web UI + `opc` CLI + SQLite），AI Agent 是一等公民工作者。
 
 ## 命令
 
@@ -13,7 +13,7 @@
 - `src/shared/` — 类型、SQLite（node:sqlite，零原生依赖）、任务操作逻辑（server 与 CLI 共用）
 - `src/server/` — Hono API + 伺服看板静态文件
 - `src/cli/` — `opc` 命令行
-- `web/src/` — React UI，hash 路由：`#/` 驾驶舱首页（pages/Home）、`#/board` 任务看板（pages/Board）、`#/projects` 项目中心（pages/Projects）；App.tsx 持有共享状态（轮询/抽屉/新建弹窗），新模块加页面 + NavRail 项即可
+- `web/src/` — React UI，hash 路由：`#/` 驾驶舱首页（pages/Home）、`#/board` 任务看板（pages/Board）、`#/projects` 项目中心（pages/Projects）、`#/kb` 知识库（pages/Knowledge）；App.tsx 持有共享状态（轮询/抽屉/新建弹窗），新模块加页面 + NavRail 项即可
 - 数据在 `data/opc.db`（gitignored），可用 `OPC_DB` 环境变量指定
 
 ## 任务看板协议（AI 必读）
@@ -40,5 +40,20 @@
 6. 发现新工作可以 `opc add "标题" -d "描述" --project xxx --model <你的模型ID>` 登记，而不是顺手做掉。加 `--model` 会记录创建者（模型·工具，如 `claude-fable-5 · claude-code`），让看板能区分是谁建的任务；工具名自动识别。不带 `--project` 会从当前 git 仓库自动识别项目名（worktree 解析到主仓库名），项目自动建档。
 7. 项目是一等实体：`opc projects` 看全局，`opc project <名>` 看详情。完成大块工作后顺手更新项目状态：`opc project <名> --next "下一步" [--blockers "阻塞"]`，让项目卡片始终反映真实进展。
 8. 程序化读取加 `--json`。
+
+## 知识库协议（AI 必读）
+
+知识库沉淀执行中的经验，`opc claim` / `opc show` 会自动带出同项目 + 通用的相关知识——那是前人（包括过去的你）踩过的坑，动手前先扫一眼，命中了用 `opc kb show K-3` 看全文。
+
+三类条目：`issue` 未决问题、`knowledge` 搜到的资料/结论、`pitfall` 踩过并有结论的坑。
+
+```bash
+./opc kb add "vite 代理 ws 断连不会自动重连" -d "现象/原因/解法…" --type pitfall --task T-3 --model <你的模型ID>
+./opc kb add "node:sqlite 自带 FTS5 但中文分词不可用" --type knowledge --url https://... --global
+./opc kb search 代理          # 全文搜索；kb list / kb show / kb edit / kb rm 同理
+```
+
+**什么值得记：** 非显而易见的问题及其解法（下次还会遇到）、搜了半天才找到的关键资料（带 `--url`）、试错才发现的约束或陷阱。显而易见的、只对当前任务有意义的不要记。
+**怎么记：** 标题一句话说清；正文写现象 → 原因 → 解法（支持 Markdown）；跨项目通用的加 `--global`，否则默认挂当前项目；正在做任务时加 `--task T-x` 关联（会在任务动态留痕）；AI 记录时带 `--model`。`issue` 解决后用 `opc kb edit K-x --type pitfall -d "补充结论"` 转成坑。
 
 用户在看板 UI（http://localhost:5175）上看到你的一切操作——运行日志实时滚动。

@@ -67,6 +67,8 @@ export function actionText(a: Activity): string {
     }
     case 'completed':
       return meta.to === 'review' ? '提交完成 · 待审核' : '完成了任务';
+    case 'knowledge':
+      return '沉淀了知识';
     default:
       return a.kind;
   }

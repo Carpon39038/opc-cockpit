@@ -11,18 +11,23 @@ import {
   addNote,
   claimTask,
   completeTask,
+  createKnowledge,
   createTask,
+  deleteKnowledge,
   deleteProject,
   deleteTask,
+  getKnowledge,
   getProject,
   getTask,
   getTaskActivity,
+  listKnowledge,
   listProjectNames,
   listProjectsWithStats,
   listTasks,
   moveTask,
   peekNext,
   recentActivity,
+  updateKnowledge,
   updateProject,
   updateTask,
 } from '../shared/store';
@@ -56,7 +61,7 @@ app.post('/api/tasks', async (c) => {
 
 app.get('/api/tasks/:id', (c) => {
   const id = Number(c.req.param('id'));
-  return c.json({ ...getTask(id), activity: getTaskActivity(id) });
+  return c.json({ ...getTask(id), activity: getTaskActivity(id), knowledge: listKnowledge({ task_id: id }) });
 });
 
 app.patch('/api/tasks/:id', async (c) => {
@@ -168,6 +173,61 @@ app.patch('/api/projects/:name', async (c) => {
 
 app.delete('/api/projects/:name', (c) => {
   deleteProject(c.req.param('name'));
+  return c.json({ ok: true });
+});
+
+// ---------------- 知识库 ----------------
+
+app.get('/api/kb', (c) => {
+  const { type, project, tag, q, task } = c.req.query();
+  return c.json(
+    listKnowledge({ type: type || undefined, project, tag, q, task_id: task ? Number(task) : undefined })
+  );
+});
+
+app.post('/api/kb', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    createKnowledge(
+      {
+        type: typeof body.type === 'string' ? body.type : undefined,
+        title: String(body.title ?? ''),
+        body: typeof body.body === 'string' ? body.body : undefined,
+        tags: typeof body.tags === 'string' ? body.tags : undefined,
+        project: typeof body.project === 'string' ? body.project : undefined,
+        task_id: body.task_id ? Number(body.task_id) : undefined,
+        source_url: typeof body.source_url === 'string' ? body.source_url : undefined,
+        creator: typeof body.creator === 'string' ? body.creator : undefined,
+      },
+      actorOf(body)
+    ),
+    201
+  );
+});
+
+app.get('/api/kb/:id', (c) => c.json(getKnowledge(Number(c.req.param('id')))));
+
+app.patch('/api/kb/:id', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    updateKnowledge(
+      Number(c.req.param('id')),
+      {
+        type: typeof body.type === 'string' ? body.type : undefined,
+        title: typeof body.title === 'string' ? body.title : undefined,
+        body: typeof body.body === 'string' ? body.body : undefined,
+        tags: typeof body.tags === 'string' ? body.tags : undefined,
+        project: typeof body.project === 'string' ? body.project : undefined,
+        task_id: body.task_id !== undefined ? Number(body.task_id) : undefined,
+        source_url: typeof body.source_url === 'string' ? body.source_url : undefined,
+      },
+      actorOf(body)
+    )
+  );
+});
+
+app.delete('/api/kb/:id', (c) => {
+  deleteKnowledge(Number(c.req.param('id')));
   return c.json({ ok: true });
 });
 

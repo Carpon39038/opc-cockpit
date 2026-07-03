@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, ProjectWithStats, Status, Task } from '../../src/shared/types';
+import type { Activity, KnowledgeEntry, ProjectWithStats, Status, Task } from '../../src/shared/types';
 import { isAgent } from '../../src/shared/types';
-import { api, type ProjectPatch, type TaskDetail } from './api';
+import { api, type KbPatch, type ProjectPatch, type TaskDetail } from './api';
 import { Clock } from './components/Clock';
 import { Drawer } from './components/Drawer';
 import { NavRail } from './components/NavRail';
 import { NewTaskModal } from './components/NewTaskModal';
 import { BoardPage } from './pages/Board';
 import { HomePage } from './pages/Home';
+import { KnowledgePage } from './pages/Knowledge';
 import { ProjectsPage } from './pages/Projects';
 
 function useRoute(): string {
@@ -24,6 +25,7 @@ const PAGE_TITLES: Record<string, [string, string]> = {
   '/': ['驾驶舱', 'DAILY OPS'],
   '/board': ['任务看板', 'TASK BOARD'],
   '/projects': ['项目中心', 'PROJECTS'],
+  '/kb': ['知识库', 'KNOWLEDGE'],
 };
 
 export default function App() {
@@ -31,6 +33,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [projects, setProjects] = useState<ProjectWithStats[]>([]);
+  const [kb, setKb] = useState<KnowledgeEntry[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [newStatus, setNewStatus] = useState<Status | null>(null);
@@ -41,10 +44,11 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [t, a, p] = await Promise.all([api.tasks(), api.activity(), api.projects()]);
+      const [t, a, p, k] = await Promise.all([api.tasks(), api.activity(), api.projects(), api.kb()]);
       setTasks(t);
       setActivity(a);
       setProjects(p);
+      setKb(k);
       if (selectedRef.current !== null) {
         setDetail(await api.detail(selectedRef.current));
       }
@@ -153,6 +157,15 @@ export default function App() {
             onDrop={onDrop}
             onQuickAdd={(s) => setNewStatus(s)}
             onApprove={onApprove}
+          />
+        ) : route === '/kb' ? (
+          <KnowledgePage
+            entries={kb}
+            projects={projects.map((p) => p.name)}
+            onCreate={(input: KbPatch) => mutate(() => api.createKb(input))}
+            onPatch={(id, fields) => mutate(() => api.patchKb(id, fields))}
+            onDelete={(id) => mutate(() => api.removeKb(id))}
+            onOpenTask={openTask}
           />
         ) : route === '/projects' ? (
           <ProjectsPage

@@ -40,6 +40,16 @@ const ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    path: '/kb',
+    zh: '知识',
+    icon: (
+      <svg viewBox="0 0 24 24" {...S}>
+        <path d="M5 4a2 2 0 0 1 2-2h12v18H7a2 2 0 0 0-2 2z" />
+        <path d="M19 16H7a2 2 0 0 0-2 2" />
+      </svg>
+    ),
+  },
 ];
 
 // 规划中的模块，先占位不可点
@@ -60,15 +70,6 @@ const SOON: { zh: string; icon: ReactElement }[] = [
         <path d="M10 3h4" />
         <path d="M10 3v6l-4.6 8.2A2 2 0 0 0 7.2 20h9.6a2 2 0 0 0 1.8-2.8L14 9V3" />
         <path d="M8 14h8" />
-      </svg>
-    ),
-  },
-  {
-    zh: '知识',
-    icon: (
-      <svg viewBox="0 0 24 24" {...S}>
-        <path d="M5 4a2 2 0 0 1 2-2h12v18H7a2 2 0 0 0-2 2z" />
-        <path d="M19 16H7a2 2 0 0 0-2 2" />
       </svg>
     ),
   },

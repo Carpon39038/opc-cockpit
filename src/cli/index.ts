@@ -5,6 +5,11 @@ import { Command } from 'commander';
 import {
   Activity,
   HUMAN_ACTOR,
+  KNOWLEDGE_TYPE_ALIASES,
+  KNOWLEDGE_TYPE_LABELS,
+  KNOWLEDGE_TYPES,
+  KnowledgeEntry,
+  KnowledgeType,
   PROJECT_STATUS_LABELS,
   PROJECT_STATUSES,
   ProjectWithStats,
@@ -13,6 +18,8 @@ import {
   STATUSES,
   Status,
   Task,
+  kbRef,
+  parseKbRef,
   parseRef,
   taskRef,
 } from '../shared/types';
@@ -21,14 +28,20 @@ import {
   addNote,
   claimTask,
   completeTask,
+  createKnowledge,
   createTask,
+  deleteKnowledge,
+  getKnowledge,
   getProject,
   getTask,
   getTaskActivity,
+  listKnowledge,
   listProjectsWithStats,
   listTasks,
   moveTask,
   peekNext,
+  relatedKnowledge,
+  updateKnowledge,
   updateProject,
   updateTask,
 } from '../shared/store';
@@ -166,6 +179,9 @@ function fmtActivity(a: Activity): string {
     case 'completed':
       action = meta.to === 'review' ? '提交完成，等待审核' : '完成了任务';
       break;
+    case 'knowledge':
+      action = '沉淀了知识';
+      break;
     default:
       action = a.kind;
   }
@@ -187,7 +203,7 @@ function safeParse(s: string): Record<string, unknown> {
   }
 }
 
-function printDetail(t: Task, activity: Activity[]) {
+function printDetail(t: Task, activity: Activity[], kb: KnowledgeEntry[] = []) {
   console.log(`${taskRef(t.id)} [${t.priority}] ${t.title}`);
   const agentInfo = [t.agent_tool, t.agent_model].filter(Boolean).join(' · ');
   const who = t.assignee ? `${t.assignee}${agentInfo ? `（${agentInfo}）` : ''}` : '未分配';
@@ -200,6 +216,41 @@ function printDetail(t: Task, activity: Activity[]) {
   if (activity.length) {
     console.log('--- 动态 ---');
     for (const a of activity) console.log(fmtActivity(a));
+  }
+  if (kb.length) {
+    console.log(`--- 相关知识（${t.project ? `项目 ${t.project} + 通用` : '通用'}，最近 ${kb.length} 条）---`);
+    for (const k of kb) console.log('  ' + fmtKbLine(k));
+    console.log(`  （opc kb show K-x 看详情，opc kb search <词> 搜更多）`);
+  }
+}
+
+function resolveKbType(input: string): KnowledgeType {
+  const t = KNOWLEDGE_TYPE_ALIASES[input.toLowerCase()];
+  if (!t) {
+    throw new StoreError(`无效知识类型: ${input}（可选: ${KNOWLEDGE_TYPES.join(', ')}）`);
+  }
+  return t;
+}
+
+function fmtKbLine(k: KnowledgeEntry): string {
+  const extras: string[] = [k.project ? `proj:${k.project}` : '通用'];
+  if (k.tags) extras.push('#' + k.tags.split(',').join(' #'));
+  if (k.task_id) extras.push(taskRef(k.task_id));
+  return `${kbRef(k.id).padEnd(6)} [${KNOWLEDGE_TYPE_LABELS[k.type]}] ${k.title} (${extras.join(' ')})`;
+}
+
+function printKbDetail(k: KnowledgeEntry) {
+  console.log(`${kbRef(k.id)} [${KNOWLEDGE_TYPE_LABELS[k.type]}] ${k.title}`);
+  const meta: string[] = [k.project ? `项目: ${k.project}` : '项目: （通用）'];
+  if (k.tags) meta.push(`标签: ${k.tags.split(',').join(', ')}`);
+  if (k.task_id) meta.push(`关联: ${taskRef(k.task_id)}${k.task_title ? ` ${k.task_title}` : ''}`);
+  console.log(meta.join('  '));
+  if (k.source_url) console.log(`来源: ${k.source_url}`);
+  const who = k.actor ? `${k.actor}${k.creator ? `（${k.creator}）` : ''}` : k.creator || '—';
+  console.log(`记录: ${who} · ${k.created_at.slice(0, 10)}${k.updated_at !== k.created_at ? `（更新于 ${k.updated_at.slice(0, 10)}）` : ''}`);
+  if (k.body) {
+    console.log('---');
+    console.log(k.body);
   }
 }
 
@@ -256,7 +307,8 @@ program
     const id = parseRef(ref);
     const t = getTask(id);
     const activity = getTaskActivity(id);
-    out({ ...t, activity }, () => printDetail(t, activity));
+    const kb = relatedKnowledge(t.project);
+    out({ ...t, activity, related_knowledge: kb }, () => printDetail(t, activity, kb));
   });
 
 program
@@ -306,7 +358,8 @@ program
     const preferProject = id === null ? detectProject() : '';
     const t = claimTask(id, actor(), { tool, model }, preferProject);
     const activity = getTaskActivity(t.id);
-    out({ ...t, activity }, () => {
+    const kb = relatedKnowledge(t.project);
+    out({ ...t, activity, related_knowledge: kb }, () => {
       const info = [tool, model].filter(Boolean).join(' · ');
       const crossProject =
         preferProject && t.project && t.project.toLowerCase() !== preferProject.toLowerCase();
@@ -315,7 +368,7 @@ program
         console.log(`  （当前项目 ${preferProject} 无可领任务，已跨项目领取 ${t.project}）`);
       }
       console.log('');
-      printDetail(t, activity);
+      printDetail(t, activity, kb);
     });
   });
 
@@ -354,6 +407,7 @@ program
     out(t, () => {
       const hint = t.status === 'review' ? '（等待用户在看板上审核确认）' : '';
       console.log(`✓ ${taskRef(t.id)} → ${STATUS_LABELS[t.status]} ${hint}`);
+      console.log(`  这次有踩坑/搜到关键资料/值得复用的经验？opc kb add "标题" -d "细节" --type pitfall --task ${taskRef(t.id)} 沉淀下来`);
     });
   });
 
@@ -444,6 +498,124 @@ program
       console.log(`任务: ${active.length} 个进行 + ${done} 个完成`);
       for (const t of active) console.log('  ' + fmtLine(t) + `  [${STATUS_LABELS[t.status]}]`);
     });
+  });
+
+// ---------------- 知识库 ----------------
+
+const kb = program
+  .command('kb')
+  .description('知识库：沉淀执行中遇到的问题、搜到的知识、踩过的坑（领任务时自动带出）');
+
+kb.command('add <title>')
+  .description('记一条知识（问题/知识/坑）')
+  .option('-d, --desc <desc>', '详情：现象、原因、解法、摘录…（支持 Markdown）')
+  .option('-t, --type <type>', '类型 issue（未决问题）/ knowledge（资料结论）/ pitfall（踩过的坑）', 'knowledge')
+  .option('--tags <tags>', '标签，逗号分隔')
+  .option('--project <project>', '关联项目（默认自动识别当前 git 仓库）')
+  .option('--global', '通用知识，不挂项目（任何项目领任务都会带出）')
+  .option('--task <ref>', '关联任务，如 T-3（会在任务动态里留痕）')
+  .option('--url <url>', '来源链接（搜到的知识记出处）')
+  .option('--tool <tool>', '记录者工具名（默认自动识别）')
+  .option('--model <model>', '记录者模型 ID（AI 记录时传自己的模型，如 claude-fable-5）')
+  .action((title: string, opts: { desc?: string; type: string; tags?: string; project?: string; global?: boolean; task?: string; url?: string; tool?: string; model?: string }) => {
+    const project = opts.global ? '' : (opts.project ?? detectProject());
+    const tool = opts.tool ?? detectTool();
+    const model = opts.model ?? '';
+    const creator = [model, tool].filter(Boolean).join(' · ');
+    const k = createKnowledge(
+      {
+        title,
+        body: opts.desc,
+        type: resolveKbType(opts.type),
+        tags: opts.tags,
+        project,
+        task_id: opts.task ? parseRef(opts.task) : 0,
+        source_url: opts.url,
+        creator,
+      },
+      actor()
+    );
+    out(k, () => console.log(`✓ 已记录 ${fmtKbLine(k)}`));
+  });
+
+kb.command('list')
+  .alias('ls')
+  .description('列出知识条目（最近更新在前）')
+  .option('-t, --type <type>', '按类型过滤 issue/knowledge/pitfall')
+  .option('--project <project>', '按项目过滤')
+  .option('--tag <tag>', '按标签过滤')
+  .option('-q, --query <q>', '搜索标题/正文/标签')
+  .action((opts: { type?: string; project?: string; tag?: string; query?: string }) => {
+    const entries = listKnowledge({
+      type: opts.type ? resolveKbType(opts.type) : undefined,
+      project: opts.project,
+      tag: opts.tag,
+      q: opts.query,
+    });
+    out(entries, () => {
+      if (!entries.length) {
+        console.log('（没有匹配的知识条目，opc kb add 记一条）');
+        return;
+      }
+      for (const k of entries) console.log('  ' + fmtKbLine(k));
+    });
+  });
+
+kb.command('search <keyword>')
+  .description('全文搜索知识库（标题/正文/标签）')
+  .option('--project <project>', '限定项目')
+  .action((keyword: string, opts: { project?: string }) => {
+    const entries = listKnowledge({ q: keyword, project: opts.project });
+    out(entries, () => {
+      if (!entries.length) {
+        console.log(`（没搜到「${keyword}」相关的知识）`);
+        return;
+      }
+      for (const k of entries) console.log('  ' + fmtKbLine(k));
+    });
+  });
+
+kb.command('show <ref>')
+  .description('查看知识条目全文')
+  .action((ref: string) => {
+    const k = getKnowledge(parseKbRef(ref));
+    out(k, () => printKbDetail(k));
+  });
+
+kb.command('edit <ref>')
+  .description('编辑知识条目（问题解决后可 --type pitfall 转成坑并补结论）')
+  .option('--title <title>', '标题')
+  .option('-d, --desc <desc>', '详情')
+  .option('-t, --type <type>', '类型 issue/knowledge/pitfall')
+  .option('--tags <tags>', '标签，逗号分隔')
+  .option('--project <project>', '关联项目')
+  .option('--global', '改为通用知识（清空项目）')
+  .option('--task <ref>', '关联任务，如 T-3')
+  .option('--url <url>', '来源链接')
+  .action((ref: string, opts: { title?: string; desc?: string; type?: string; tags?: string; project?: string; global?: boolean; task?: string; url?: string }) => {
+    const k = updateKnowledge(
+      parseKbRef(ref),
+      {
+        title: opts.title,
+        body: opts.desc,
+        type: opts.type ? resolveKbType(opts.type) : undefined,
+        tags: opts.tags,
+        project: opts.global ? '' : opts.project,
+        task_id: opts.task ? parseRef(opts.task) : undefined,
+        source_url: opts.url,
+      },
+      actor()
+    );
+    out(k, () => console.log(`✓ 已更新 ${fmtKbLine(k)}`));
+  });
+
+kb.command('rm <ref>')
+  .description('删除知识条目')
+  .action((ref: string) => {
+    const id = parseKbRef(ref);
+    const k = getKnowledge(id);
+    deleteKnowledge(id);
+    out({ ok: true, id }, () => console.log(`✓ 已删除 ${kbRef(id)}「${k.title}」`));
   });
 
 program

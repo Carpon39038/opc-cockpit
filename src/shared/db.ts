@@ -67,6 +67,22 @@ export function getDb(): DatabaseSync {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS knowledge (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL DEFAULT 'knowledge',
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      tags TEXT NOT NULL DEFAULT '',
+      project TEXT NOT NULL DEFAULT '',
+      task_id INTEGER NOT NULL DEFAULT 0,
+      source_url TEXT NOT NULL DEFAULT '',
+      creator TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge(project);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_task ON knowledge(task_id);
   `);
   migrate(db);
   return db;

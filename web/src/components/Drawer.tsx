@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Status, Task } from '../../../src/shared/types';
-import { PRIORITIES, STATUSES, STATUS_LABELS, taskRef } from '../../../src/shared/types';
+import { KNOWLEDGE_TYPE_LABELS, PRIORITIES, STATUSES, STATUS_LABELS, kbRef, taskRef } from '../../../src/shared/types';
 import type { TaskDetail } from '../api';
 import { actionText, actorClass, actorLabel, claimAgentInfo, createAgentInfo, rel } from '../ui';
 import { Markdown } from './Markdown';
@@ -209,6 +209,30 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
               </button>
             )}
           </div>
+
+          {detail.knowledge.length > 0 && (
+            <div className="drawer-section">
+              <div className="section-label">沉淀知识 · {detail.knowledge.length}</div>
+              <ul className="drawer-kb">
+                {detail.knowledge.map((k) => (
+                  <li key={k.id}>
+                    <button
+                      className="drawer-kb-item"
+                      title="在知识库中查看"
+                      onClick={() => {
+                        onClose();
+                        location.hash = '#/kb';
+                      }}
+                    >
+                      <span className={`chip kb-chip-${k.type}`}>{KNOWLEDGE_TYPE_LABELS[k.type]}</span>
+                      <span className="card-ref">{kbRef(k.id)}</span>
+                      <span className="drawer-kb-title">{k.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="drawer-section">
             <div className="section-label">动态 · {detail.activity.length}</div>

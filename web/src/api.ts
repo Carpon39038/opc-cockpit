@@ -1,8 +1,11 @@
-import type { Activity, Project, ProjectWithStats, Task } from '../../src/shared/types';
+import type { Activity, KnowledgeEntry, Project, ProjectWithStats, Task } from '../../src/shared/types';
 
-export type TaskDetail = Task & { activity: Activity[] };
+export type TaskDetail = Task & { activity: Activity[]; knowledge: KnowledgeEntry[] };
 export type ProjectDetail = Project & { tasks: Task[] };
 export type ProjectPatch = Partial<Pick<Project, 'goal' | 'status' | 'next_step' | 'blockers'>>;
+export type KbPatch = Partial<
+  Pick<KnowledgeEntry, 'type' | 'title' | 'body' | 'tags' | 'project' | 'task_id' | 'source_url'>
+>;
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -30,6 +33,11 @@ export const api = {
   comment: (id: number, content: string) =>
     post(`/api/tasks/${id}/progress`, { content, kind: 'comment' }).then((r) => j<Task>(r)),
   remove: (id: number) => fetch(`/api/tasks/${id}`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
+
+  kb: () => fetch('/api/kb').then((r) => j<KnowledgeEntry[]>(r)),
+  createKb: (input: KbPatch) => post('/api/kb', input).then((r) => j<KnowledgeEntry>(r)),
+  patchKb: (id: number, fields: KbPatch) => post(`/api/kb/${id}`, fields, 'PATCH').then((r) => j<KnowledgeEntry>(r)),
+  removeKb: (id: number) => fetch(`/api/kb/${id}`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
 
   projects: () => fetch('/api/projects').then((r) => j<ProjectWithStats[]>(r)),
   createProject: (name: string) => post('/api/projects', { name }).then((r) => j<ProjectDetail>(r)),
