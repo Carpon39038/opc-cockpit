@@ -4,7 +4,7 @@
 
 ## 命令
 
-- `npm run dev` — 开发模式（API :5175 + Vite :5173，改前端访问 5173）
+- `npm run dev` — 开发模式（API :5177 + Vite :5173，改前端访问 5173；5177 避开常驻正式服的 5175）
 - `npm run build` — 构建 server/CLI/前端（改完代码必须重新 build，`./opc` 跑的是 dist）
 - `npm start` — 生产模式，单进程跑在 http://localhost:5175
 

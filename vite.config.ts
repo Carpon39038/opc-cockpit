@@ -7,7 +7,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:5175',
+      // 开发 API 跑在 5177，避开常驻正式服的 5175
+      '/api': `http://localhost:${process.env.DEV_API_PORT || 5177}`,
     },
   },
   build: {
