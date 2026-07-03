@@ -844,6 +844,12 @@ textarea::placeholder {
   overflow: hidden;
 }
 
+.rail-content.rail-creator {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.85;
+}
+
 .rail-meta {
   display: flex;
   gap: 8px;
@@ -1111,6 +1117,13 @@ textarea::placeholder {
 
 .tl-plain {
   white-space: pre-wrap;
+}
+
+.tl-content.tl-creator {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.85;
 }
 
 .comment-box {

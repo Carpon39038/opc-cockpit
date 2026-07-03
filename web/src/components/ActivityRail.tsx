@@ -1,6 +1,6 @@
 import type { Activity } from '../../../src/shared/types';
 import { taskRef } from '../../../src/shared/types';
-import { actionText, actorClass, actorLabel, claimAgentInfo, rel } from '../ui';
+import { actionText, actorClass, actorLabel, claimAgentInfo, createAgentInfo, rel } from '../ui';
 
 interface ListProps {
   items: Activity[];
@@ -20,9 +20,13 @@ export function ActivityList({ items, onSelect }: ListProps) {
               <b className={actorClass(a.actor)}>{actorLabel(a.actor)}</b> {actionText(a)}{' '}
               <span className="rail-ref">{taskRef(a.task_id)}</span>
             </span>
-            {(a.content || claimAgentInfo(a)) && (
-              <span className="rail-content">{a.content || claimAgentInfo(a)}</span>
-            )}
+            {a.kind === 'created'
+              ? createAgentInfo(a) && (
+                  <span className="rail-content rail-creator">{createAgentInfo(a)}</span>
+                )
+              : (a.content || claimAgentInfo(a)) && (
+                  <span className="rail-content">{a.content || claimAgentInfo(a)}</span>
+                )}
             <span className="rail-meta">
               {a.task_title && <span className="rail-task">{a.task_title}</span>}
               <span className="rail-time">{rel(a.created_at)}</span>

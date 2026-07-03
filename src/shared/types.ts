@@ -32,6 +32,7 @@ export interface Task {
   priority: Priority;
   project: string;
   assignee: string; // '' = 未分配，'me' = 用户本人，其余 = agent 名称
+  creator: string; // 创建者的模型·工具，如 claude-fable-5 · claude-code（人创建为空）
   agent_tool: string; // 领取时的工具名，如 claude-code / cursor（人领取为空）
   agent_model: string; // 领取时的模型名，如 claude-fable-5
   due_date: string; // YYYY-MM-DD 或 ''

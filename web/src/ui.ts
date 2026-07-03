@@ -38,6 +38,13 @@ export function claimAgentInfo(a: Activity): string {
   return [meta.tool, meta.model].filter(Boolean).join(' · ');
 }
 
+/** 创建动态里记录的创建者（模型·工具，如 claude-fable-5 · claude-code；人创建为空） */
+export function createAgentInfo(a: Activity): string {
+  if (a.kind !== 'created') return '';
+  const meta = safeMeta(a);
+  return typeof meta.creator === 'string' ? meta.creator : '';
+}
+
 /** 动态条目的动作描述 */
 export function actionText(a: Activity): string {
   const meta = safeMeta(a);

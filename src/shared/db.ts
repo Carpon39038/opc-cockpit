@@ -37,6 +37,7 @@ export function getDb(): DatabaseSync {
       priority TEXT NOT NULL DEFAULT 'P2',
       project TEXT NOT NULL DEFAULT '',
       assignee TEXT NOT NULL DEFAULT '',
+      creator TEXT NOT NULL DEFAULT '',
       agent_tool TEXT NOT NULL DEFAULT '',
       agent_model TEXT NOT NULL DEFAULT '',
       due_date TEXT NOT NULL DEFAULT '',
@@ -76,6 +77,7 @@ function migrate(db: DatabaseSync) {
   const cols = new Set(
     (db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]).map((c) => c.name)
   );
+  if (!cols.has('creator')) db.exec("ALTER TABLE tasks ADD COLUMN creator TEXT NOT NULL DEFAULT ''");
   if (!cols.has('agent_tool')) db.exec("ALTER TABLE tasks ADD COLUMN agent_tool TEXT NOT NULL DEFAULT ''");
   if (!cols.has('agent_model')) db.exec("ALTER TABLE tasks ADD COLUMN agent_model TEXT NOT NULL DEFAULT ''");
   // 任务里出现过但没建档的项目名，自动补一行项目记录

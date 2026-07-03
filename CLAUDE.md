@@ -37,7 +37,7 @@
 3. 进度汇报写实质内容（做了什么、产出在哪、卡在哪），不要写"正在进行中"。描述和评论支持 Markdown（列表/代码块/表格/任务清单），看板上会渲染。
 4. `done` 必须带 `-m` 交付摘要。Agent 完成默认进「待审核」，用户在看板上验收；不要用 `--skip-review`，除非用户明确说过。
 5. 做不了/不该你做的任务：`opc comment T-3 "原因"` 然后 `opc move T-3 todo` 释放（移回 todo 会自动解除认领并清空工具/模型记录）。
-6. 发现新工作可以 `opc add "标题" -d "描述" --project xxx` 登记，而不是顺手做掉。不带 `--project` 会从当前 git 仓库自动识别项目名（worktree 解析到主仓库名），项目自动建档。
+6. 发现新工作可以 `opc add "标题" -d "描述" --project xxx --model <你的模型ID>` 登记，而不是顺手做掉。加 `--model` 会记录创建者（模型·工具，如 `claude-fable-5 · claude-code`），让看板能区分是谁建的任务；工具名自动识别。不带 `--project` 会从当前 git 仓库自动识别项目名（worktree 解析到主仓库名），项目自动建档。
 7. 项目是一等实体：`opc projects` 看全局，`opc project <名>` 看详情。完成大块工作后顺手更新项目状态：`opc project <名> --next "下一步" [--blockers "阻塞"]`，让项目卡片始终反映真实进展。
 8. 程序化读取加 `--json`。
 

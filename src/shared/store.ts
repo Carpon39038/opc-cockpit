@@ -105,6 +105,7 @@ export interface CreateInput {
   project?: string;
   due_date?: string;
   assignee?: string;
+  creator?: string; // 创建者的工具·模型（AI 创建时自填，人创建为空）
 }
 
 export function createTask(input: CreateInput, actor: string): Task {
@@ -115,10 +116,11 @@ export function createTask(input: CreateInput, actor: string): Task {
   assertStatus(status);
   assertPriority(priority);
   const ts = now();
+  const creator = input.creator || '';
   const result = getDb()
     .prepare(
-      `INSERT INTO tasks (title, description, status, priority, project, assignee, due_date, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO tasks (title, description, status, priority, project, assignee, creator, due_date, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       title,
@@ -127,13 +129,14 @@ export function createTask(input: CreateInput, actor: string): Task {
       priority,
       input.project || '',
       input.assignee || '',
+      creator,
       input.due_date || '',
       ts,
       ts
     );
   const id = Number(result.lastInsertRowid);
   if (input.project) ensureProject(input.project);
-  log(id, actor, 'created', title, { status, priority });
+  log(id, actor, 'created', title, { status, priority, creator });
   return getTask(id);
 }
 

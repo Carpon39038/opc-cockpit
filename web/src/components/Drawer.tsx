@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Status, Task } from '../../../src/shared/types';
 import { PRIORITIES, STATUSES, STATUS_LABELS, taskRef } from '../../../src/shared/types';
 import type { TaskDetail } from '../api';
-import { actionText, actorClass, actorLabel, claimAgentInfo, rel } from '../ui';
+import { actionText, actorClass, actorLabel, claimAgentInfo, createAgentInfo, rel } from '../ui';
 import { Markdown } from './Markdown';
 
 interface Props {
@@ -226,6 +226,9 @@ export function Drawer({ detail, onClose, onPatch, onComment, onDelete }: Props)
                     ) : claimAgentInfo(a) ? (
                       <div className="tl-content tl-plain">{claimAgentInfo(a)}</div>
                     ) : null}
+                    {createAgentInfo(a) && (
+                      <div className="tl-content tl-plain tl-creator">创建者 · {createAgentInfo(a)}</div>
+                    )}
                   </div>
                 </li>
               ))}

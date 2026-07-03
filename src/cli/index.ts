@@ -179,6 +179,7 @@ function printDetail(t: Task, activity: Activity[]) {
   const agentInfo = [t.agent_tool, t.agent_model].filter(Boolean).join(' · ');
   const who = t.assignee ? `${t.assignee}${agentInfo ? `（${agentInfo}）` : ''}` : '未分配';
   console.log(`状态: ${STATUS_LABELS[t.status]}  负责: ${who}${t.project ? `  项目: ${t.project}` : ''}${t.due_date ? `  截止: ${t.due_date}` : ''}`);
+  if (t.creator) console.log(`创建: ${t.creator}`);
   if (t.description) {
     console.log('---');
     console.log(t.description);
@@ -253,8 +254,14 @@ program
   .option('--project <project>', '所属项目')
   .option('-s, --status <status>', '初始状态', 'todo')
   .option('--due <date>', '截止日期 YYYY-MM-DD')
-  .action((title: string, opts: { desc?: string; priority: string; project?: string; status: string; due?: string }) => {
+  .option('--tool <tool>', '创建者工具名（默认自动识别，如 claude-code）')
+  .option('--model <model>', '创建者模型 ID（AI 创建时传自己的模型，如 claude-fable-5）')
+  .action((title: string, opts: { desc?: string; priority: string; project?: string; status: string; due?: string; tool?: string; model?: string }) => {
     const autoProject = opts.project === undefined ? detectProject() : '';
+    const tool = opts.tool ?? detectTool();
+    const model = opts.model ?? '';
+    // 模型优先、工具其次：AI 显式传 --model 时以模型为主，工具名补充
+    const creator = [model, tool].filter(Boolean).join(' · ');
     const t = createTask(
       {
         title,
@@ -263,6 +270,7 @@ program
         project: opts.project ?? autoProject,
         status: resolveStatus(opts.status),
         due_date: opts.due,
+        creator,
       },
       actor()
     );
