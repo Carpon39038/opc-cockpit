@@ -97,3 +97,12 @@
 
 关键不是让 AI 输出一篇漂亮报告，而是让 AI 帮用户完成从不确定到可执行判断的闭环。
 
+## 7. v1 已实现（2026-07）
+
+围绕「保存链接、截图、摘要、总结」的最小闭环落地（T-6）：
+
+- **数据**：`research`（R-x：title + question 研究问题 + conclusion 结论 + 状态 收集中/已有结论/已归档 + 项目/任务关联）+ `research_items` 资料卡（title + url + image 截图 + body 摘要/爽点 + tags + rating 0-5 星）。附件存 `data/files/`。
+- **CLI**：`opc research`（别名 `rs`）`add / list / show / item / edit-item / rm-item / conclude / edit / distill / rm`；截图支持 `--image` 本地导入和 `--image-url` 网络抓取；`distill` 把结论（带精选参考）转成知识库条目并归档——对应「产出分发」里的知识卡片路径。
+- **Web**：`#/research` 列表卡片（封面图 + 状态 + 资料数）→ 详情（研究问题 / 资料池网格 / 结论区），资料卡点开看大图和全文，支持上传/粘贴截图、星级打分、一键沉淀。
+- **未做**（等真实使用撞出需求再加）：假设（hypothesis）字段、可信度、反例与风险区、Playbook/决策记录转化、多 Agent 编排。当前用 question/body 的 Markdown 自由承载。
+

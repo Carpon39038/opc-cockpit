@@ -14,6 +14,13 @@ import {
   PROJECT_STATUS_LABELS,
   PROJECT_STATUSES,
   ProjectWithStats,
+  RESEARCH_STATUS_ALIASES,
+  RESEARCH_STATUS_LABELS,
+  RESEARCH_STATUSES,
+  Research,
+  ResearchItem,
+  ResearchStatus,
+  ResearchWithStats,
   STATUS_ALIASES,
   STATUS_LABELS,
   STATUSES,
@@ -23,6 +30,8 @@ import {
   kbRef,
   parseKbRef,
   parseRef,
+  parseResearchRef,
+  researchRef,
   taskRef,
 } from '../shared/types';
 import {
@@ -30,19 +39,27 @@ import {
   TaskWithUnlocked,
   addDeps,
   addNote,
+  addResearchItem,
   claimTask,
   completeTask,
   createKnowledge,
+  createResearch,
   createTask,
   deleteKnowledge,
+  deleteResearch,
+  deleteResearchItem,
+  distillResearch,
   getDependents,
   getDeps,
   getKnowledge,
   getProject,
+  getResearchDetail,
+  getResearchItem,
   getTask,
   getTaskActivity,
   listKnowledge,
   listProjectsWithStats,
+  listResearch,
   listTasks,
   moveTask,
   peekNext,
@@ -51,8 +68,11 @@ import {
   unmetDeps,
   updateKnowledge,
   updateProject,
+  updateResearch,
+  updateResearchItem,
   updateTask,
 } from '../shared/store';
+import { fetchImageToFile, importLocalImage } from '../shared/files';
 import { dbPath } from '../shared/db';
 
 const program = new Command();
@@ -210,6 +230,9 @@ function fmtActivity(a: Activity): string {
       break;
     case 'knowledge':
       action = '沉淀了知识';
+      break;
+    case 'research':
+      action = '调研';
       break;
     case 'dep':
       action = '调整前置';
@@ -702,6 +725,281 @@ kb.command('rm <ref>')
     const k = getKnowledge(id);
     deleteKnowledge(id);
     out({ ok: true, id }, () => console.log(`✓ 已删除 ${kbRef(id)}「${k.title}」`));
+  });
+
+// ---------------- 调研 ----------------
+
+function resolveResearchStatus(input: string): ResearchStatus {
+  const s = RESEARCH_STATUS_ALIASES[input.toLowerCase()];
+  if (!s) {
+    throw new StoreError(`无效调研状态: ${input}（可选: ${RESEARCH_STATUSES.join(', ')}）`);
+  }
+  return s;
+}
+
+/** 资料条目编号：接受 7 / #7 */
+function parseItemId(ref: string): number {
+  const m = /^#?(\d+)$/.exec(ref.trim());
+  if (!m) throw new StoreError(`无法识别的资料条目编号: ${ref}（期望形如 7 或 #7）`);
+  return Number(m[1]);
+}
+
+function stars(rating: number): string {
+  return rating > 0 ? '★'.repeat(rating) : '';
+}
+
+function fmtResearchLine(r: ResearchWithStats): string {
+  const extras: string[] = [`${r.item_count} 条资料`, r.project ? `proj:${r.project}` : '通用'];
+  if (r.task_id) extras.push(taskRef(r.task_id));
+  return `${researchRef(r.id).padEnd(6)} [${RESEARCH_STATUS_LABELS[r.status]}] ${r.title} (${extras.join(' ')})`;
+}
+
+function fmtItemLines(i: ResearchItem): string[] {
+  const head = [`#${i.id}`.padEnd(5), stars(i.rating), i.title].filter(Boolean).join(' ');
+  const lines = [head];
+  if (i.url) lines.push(`      ${i.url}`);
+  if (i.image) lines.push(`      图: ${i.image}`);
+  const firstLine = i.body.split('\n').find((l) => l.trim());
+  if (firstLine) lines.push(`      ${firstLine.trim()}${i.body.trim().includes('\n') ? ' …' : ''}`);
+  if (i.tags) lines.push(`      #${i.tags.split(',').join(' #')}`);
+  return lines;
+}
+
+function printResearchDetail(r: Research, items: ResearchItem[]) {
+  console.log(`${researchRef(r.id)} [${RESEARCH_STATUS_LABELS[r.status]}] ${r.title}`);
+  const meta: string[] = [r.project ? `项目: ${r.project}` : '项目: （通用）'];
+  if (r.task_id) meta.push(`关联: ${taskRef(r.task_id)}${r.task_title ? ` ${r.task_title}` : ''}`);
+  const who = r.actor ? `${r.actor}${r.creator ? `（${r.creator}）` : ''}` : '—';
+  meta.push(`发起: ${who} · ${r.created_at.slice(0, 10)}`);
+  console.log(meta.join('  '));
+  if (r.question) {
+    console.log('--- 研究问题 ---');
+    console.log(r.question);
+  }
+  console.log(`--- 资料池（${items.length} 条）---`);
+  if (!items.length) {
+    console.log(`  （空，opc research item ${researchRef(r.id)} "标题" --url … --image-url … -d "摘要" 添加）`);
+  }
+  for (const i of items) for (const line of fmtItemLines(i)) console.log('  ' + line);
+  if (r.conclusion) {
+    console.log('--- 结论 ---');
+    console.log(r.conclusion);
+  } else if (r.status === 'collecting') {
+    console.log(`（还没有结论，收集完用 opc research conclude ${researchRef(r.id)} -m "总结" 收口）`);
+  }
+}
+
+const research = program
+  .command('research')
+  .alias('rs')
+  .description('调研：围绕研究问题收集链接/截图/摘要，形成结论后沉淀到知识库');
+
+research
+  .command('add <title>')
+  .description('发起一次调研')
+  .option('-d, --question <question>', '研究问题/目标/要求（支持 Markdown，如「找 10 个以上…每个记录爽点」）')
+  .option('--project <project>', '关联项目（默认自动识别当前 git 仓库）')
+  .option('--global', '通用调研，不挂项目')
+  .option('--task <ref>', '关联任务，如 T-3（会在任务动态里留痕）')
+  .option('--tool <tool>', '发起者工具名（默认自动识别）')
+  .option('--model <model>', '发起者模型 ID（AI 发起时传自己的模型，如 claude-fable-5）')
+  .action((title: string, opts: { question?: string; project?: string; global?: boolean; task?: string; tool?: string; model?: string }) => {
+    const project = opts.global ? '' : (opts.project ?? detectProject());
+    const tool = opts.tool ?? detectTool();
+    const creator = [opts.model ?? '', tool].filter(Boolean).join(' · ');
+    const r = createResearch(
+      {
+        title,
+        question: opts.question,
+        project,
+        task_id: opts.task ? parseRef(opts.task) : 0,
+        creator,
+      },
+      actor()
+    );
+    out(r, () => {
+      console.log(`✓ 已发起调研 ${researchRef(r.id)}「${r.title}」${r.project ? `（项目 ${r.project}）` : ''}`);
+      console.log(`  收集资料: opc research item ${researchRef(r.id)} "标题" --url <链接> --image-url <图> -d "摘要/爽点"`);
+    });
+  });
+
+research
+  .command('list')
+  .alias('ls')
+  .description('列出调研（最近推进在前）')
+  .option('-s, --status <status>', '按状态过滤 collecting/concluded/archived/all')
+  .option('--project <project>', '按项目过滤')
+  .option('-q, --query <q>', '搜索标题/问题/结论')
+  .action((opts: { status?: string; project?: string; query?: string }) => {
+    const entries = listResearch({
+      status: opts.status && opts.status !== 'all' ? resolveResearchStatus(opts.status) : opts.status,
+      project: opts.project,
+      q: opts.query,
+    });
+    out(entries, () => {
+      if (!entries.length) {
+        console.log('（没有匹配的调研，opc research add "主题" -d "研究问题" 发起一个）');
+        return;
+      }
+      for (const r of entries) console.log('  ' + fmtResearchLine(r));
+    });
+  });
+
+research
+  .command('show <ref>')
+  .description('查看调研全文：研究问题、资料池、结论')
+  .action((ref: string) => {
+    const detail = getResearchDetail(parseResearchRef(ref));
+    out(detail, () => printResearchDetail(detail, detail.items));
+  });
+
+research
+  .command('item <ref> <title>')
+  .description('往资料池加一条资料卡（链接/截图/摘要/标签/星级可任意组合）')
+  .option('--url <url>', '来源链接')
+  .option('-d, --desc <desc>', '摘要、关键摘录、爽点分析…（支持 Markdown）')
+  .option('--image <path>', '本地截图/图片文件（复制进附件目录）')
+  .option('--image-url <url>', '网络图片（下载进附件目录）')
+  .option('--tags <tags>', '标签，逗号分隔（可用来给条目分组，如 塔防/幸存者like）')
+  .option('--rating <n>', '参考价值 1-5 星')
+  .option('--tool <tool>', '记录者工具名（默认自动识别）')
+  .option('--model <model>', '记录者模型 ID（AI 记录时传自己的模型）')
+  .action(async (ref: string, title: string, opts: { url?: string; desc?: string; image?: string; imageUrl?: string; tags?: string; rating?: string; tool?: string; model?: string }) => {
+    const researchId = parseResearchRef(ref);
+    let image: string | undefined;
+    if (opts.image) image = importLocalImage(opts.image);
+    else if (opts.imageUrl) image = await fetchImageToFile(opts.imageUrl);
+    const tool = opts.tool ?? detectTool();
+    const creator = [opts.model ?? '', tool].filter(Boolean).join(' · ');
+    const item = addResearchItem(
+      researchId,
+      {
+        title,
+        url: opts.url,
+        body: opts.desc,
+        image,
+        tags: opts.tags,
+        rating: opts.rating !== undefined ? Number(opts.rating) : undefined,
+        creator,
+      },
+      actor()
+    );
+    out(item, () => {
+      console.log(`✓ ${researchRef(researchId)} 资料 +1:`);
+      for (const line of fmtItemLines(item)) console.log('  ' + line);
+    });
+  });
+
+research
+  .command('edit-item <id>')
+  .description('编辑资料条目（编号见 research show，如 7）')
+  .option('--title <title>', '标题')
+  .option('--url <url>', '来源链接')
+  .option('-d, --desc <desc>', '摘要/摘录')
+  .option('--image <path>', '换本地图片')
+  .option('--image-url <url>', '换网络图片')
+  .option('--tags <tags>', '标签，逗号分隔')
+  .option('--rating <n>', '参考价值 0-5（0 = 清除评级）')
+  .action(async (id: string, opts: { title?: string; url?: string; desc?: string; image?: string; imageUrl?: string; tags?: string; rating?: string }) => {
+    let image: string | undefined;
+    if (opts.image) image = importLocalImage(opts.image);
+    else if (opts.imageUrl) image = await fetchImageToFile(opts.imageUrl);
+    const item = updateResearchItem(
+      parseItemId(id),
+      {
+        title: opts.title,
+        url: opts.url,
+        body: opts.desc,
+        image,
+        tags: opts.tags,
+        rating: opts.rating !== undefined ? Number(opts.rating) : undefined,
+      },
+      actor()
+    );
+    out(item, () => {
+      console.log(`✓ 已更新资料 #${item.id}:`);
+      for (const line of fmtItemLines(item)) console.log('  ' + line);
+    });
+  });
+
+research
+  .command('rm-item <id>')
+  .description('删除资料条目（附带清理截图文件）')
+  .action((id: string) => {
+    const itemId = parseItemId(id);
+    const item = getResearchItem(itemId);
+    deleteResearchItem(itemId);
+    out({ ok: true, id: itemId }, () => console.log(`✓ 已删除资料 #${itemId}「${item.title}」`));
+  });
+
+research
+  .command('conclude <ref>')
+  .description('写综合结论，调研转入「已有结论」')
+  .requiredOption('-m, --message <conclusion>', '结论/总结全文（支持 Markdown）')
+  .action((ref: string, opts: { message: string }) => {
+    const id = parseResearchRef(ref);
+    const r = updateResearch(id, { conclusion: opts.message, status: 'concluded' }, actor());
+    out(r, () => {
+      console.log(`✓ ${researchRef(r.id)}「${r.title}」→ ${RESEARCH_STATUS_LABELS[r.status]}`);
+      console.log(`  值得长期复用？opc research distill ${researchRef(r.id)} 一键沉淀到知识库`);
+    });
+  });
+
+research
+  .command('edit <ref>')
+  .description('编辑调研字段')
+  .option('--title <title>', '标题')
+  .option('-d, --question <question>', '研究问题/目标/要求')
+  .option('-s, --status <status>', '状态 collecting/concluded/archived')
+  .option('--project <project>', '关联项目')
+  .option('--global', '改为通用调研（清空项目）')
+  .option('--task <ref>', '关联任务，如 T-3')
+  .action((ref: string, opts: { title?: string; question?: string; status?: string; project?: string; global?: boolean; task?: string }) => {
+    const r = updateResearch(
+      parseResearchRef(ref),
+      {
+        title: opts.title,
+        question: opts.question,
+        status: opts.status ? resolveResearchStatus(opts.status) : undefined,
+        project: opts.global ? '' : opts.project,
+        task_id: opts.task ? parseRef(opts.task) : undefined,
+      },
+      actor()
+    );
+    out(r, () => console.log(`✓ 已更新 ${researchRef(r.id)} [${RESEARCH_STATUS_LABELS[r.status]}] ${r.title}`));
+  });
+
+research
+  .command('distill <ref>')
+  .description('把结论沉淀为知识库条目（调研是生产线，知识库是仓库），调研转入已归档')
+  .option('-t, --type <type>', '知识类型 issue/knowledge/pitfall', 'knowledge')
+  .option('--global', '沉淀为通用知识，不挂项目')
+  .option('--tool <tool>', '记录者工具名（默认自动识别）')
+  .option('--model <model>', '记录者模型 ID')
+  .action((ref: string, opts: { type: string; global?: boolean; tool?: string; model?: string }) => {
+    const tool = opts.tool ?? detectTool();
+    const creator = [opts.model ?? '', tool].filter(Boolean).join(' · ');
+    const { research: r, entry } = distillResearch(parseResearchRef(ref), actor(), {
+      type: resolveKbType(opts.type),
+      global: opts.global,
+      creator,
+    });
+    out({ research: r, knowledge: entry }, () => {
+      console.log(`✓ ${researchRef(r.id)} 已沉淀为 ${fmtKbLine(entry)}`);
+      console.log(`  调研转入「${RESEARCH_STATUS_LABELS[r.status]}」`);
+    });
+  });
+
+research
+  .command('rm <ref>')
+  .description('删除调研（连同资料池和截图文件）')
+  .action((ref: string) => {
+    const id = parseResearchRef(ref);
+    const r = getResearchDetail(id);
+    deleteResearch(id);
+    out({ ok: true, id }, () =>
+      console.log(`✓ 已删除 ${researchRef(id)}「${r.title}」（含 ${r.items.length} 条资料）`)
+    );
   });
 
 program

@@ -83,6 +83,35 @@ export function getDb(): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge(project);
     CREATE INDEX IF NOT EXISTS idx_knowledge_task ON knowledge(task_id);
+    CREATE TABLE IF NOT EXISTS research (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      question TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'collecting',
+      conclusion TEXT NOT NULL DEFAULT '',
+      project TEXT NOT NULL DEFAULT '',
+      task_id INTEGER NOT NULL DEFAULT 0,
+      creator TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_research_project ON research(project);
+    CREATE TABLE IF NOT EXISTS research_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      research_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL DEFAULT '',
+      image TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      tags TEXT NOT NULL DEFAULT '',
+      rating INTEGER NOT NULL DEFAULT 0,
+      creator TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_research_items_rid ON research_items(research_id);
     CREATE TABLE IF NOT EXISTS task_deps (
       task_id INTEGER NOT NULL,
       depends_on INTEGER NOT NULL,

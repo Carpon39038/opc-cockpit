@@ -6,26 +6,34 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { HUMAN_ACTOR } from '../shared/types';
 import { findRepoRoot } from '../shared/db';
+import { MIME_BY_EXT, filesDir, saveImageBuffer } from '../shared/files';
 import {
   StoreError,
   addDeps,
   addNote,
+  addResearchItem,
   claimTask,
   completeTask,
   createKnowledge,
+  createResearch,
   createTask,
   deleteKnowledge,
   deleteProject,
+  deleteResearch,
+  deleteResearchItem,
   deleteTask,
+  distillResearch,
   getDependents,
   getDeps,
   getKnowledge,
   getProject,
+  getResearchDetail,
   getTask,
   getTaskActivity,
   listKnowledge,
   listProjectNames,
   listProjectsWithStats,
+  listResearch,
   listTasks,
   moveTask,
   peekNext,
@@ -33,6 +41,8 @@ import {
   removeDeps,
   updateKnowledge,
   updateProject,
+  updateResearch,
+  updateResearchItem,
   updateTask,
 } from '../shared/store';
 
@@ -255,6 +265,139 @@ app.patch('/api/kb/:id', async (c) => {
 app.delete('/api/kb/:id', (c) => {
   deleteKnowledge(Number(c.req.param('id')));
   return c.json({ ok: true });
+});
+
+// ---------------- 调研 ----------------
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+
+app.get('/api/research', (c) => {
+  const { status, project, q, task } = c.req.query();
+  return c.json(
+    listResearch({ status: status || undefined, project, q, task_id: task ? Number(task) : undefined })
+  );
+});
+
+app.post('/api/research', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    createResearch(
+      {
+        title: String(body.title ?? ''),
+        question: str(body.question),
+        project: str(body.project),
+        task_id: body.task_id ? Number(body.task_id) : undefined,
+        creator: str(body.creator),
+      },
+      actorOf(body)
+    ),
+    201
+  );
+});
+
+app.get('/api/research/:id', (c) => c.json(getResearchDetail(Number(c.req.param('id')))));
+
+app.patch('/api/research/:id', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    updateResearch(
+      Number(c.req.param('id')),
+      {
+        title: str(body.title),
+        question: str(body.question),
+        status: str(body.status),
+        conclusion: str(body.conclusion),
+        project: str(body.project),
+        task_id: body.task_id !== undefined ? Number(body.task_id) : undefined,
+      },
+      actorOf(body)
+    )
+  );
+});
+
+app.delete('/api/research/:id', (c) => {
+  deleteResearch(Number(c.req.param('id')));
+  return c.json({ ok: true });
+});
+
+app.post('/api/research/:id/items', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    addResearchItem(
+      Number(c.req.param('id')),
+      {
+        title: String(body.title ?? ''),
+        url: str(body.url),
+        image: str(body.image),
+        body: str(body.body),
+        tags: str(body.tags),
+        rating: body.rating !== undefined ? Number(body.rating) : undefined,
+        creator: str(body.creator),
+      },
+      actorOf(body)
+    ),
+    201
+  );
+});
+
+// 结论沉淀为知识库条目，调研转入已归档
+app.post('/api/research/:id/distill', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { research, entry } = distillResearch(Number(c.req.param('id')), actorOf(body), {
+    type: str(body.type),
+    global: Boolean(body.global),
+    creator: str(body.creator),
+  });
+  return c.json({ research, knowledge: entry }, 201);
+});
+
+app.patch('/api/research-items/:id', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    updateResearchItem(
+      Number(c.req.param('id')),
+      {
+        title: str(body.title),
+        url: str(body.url),
+        image: str(body.image),
+        body: str(body.body),
+        tags: str(body.tags),
+        rating: body.rating !== undefined ? Number(body.rating) : undefined,
+      },
+      actorOf(body)
+    )
+  );
+});
+
+app.delete('/api/research-items/:id', (c) => {
+  deleteResearchItem(Number(c.req.param('id')));
+  return c.json({ ok: true });
+});
+
+// ---------------- 附件（截图上传 / 访问） ----------------
+
+app.post('/api/files', async (c) => {
+  const body = await c.req.parseBody();
+  const f = body.file;
+  if (!(f instanceof File)) return c.json({ error: '需要 multipart 字段 file（图片）' }, 400);
+  const data = new Uint8Array(await f.arrayBuffer());
+  return c.json({ file: saveImageBuffer(data, f.name || f.type) }, 201);
+});
+
+app.get('/files/:name', (c) => {
+  const name = c.req.param('name');
+  if (!/^[\w.-]+$/.test(name) || name.includes('..')) return c.text('bad name', 400);
+  try {
+    const data = readFileSync(join(filesDir(), name));
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    return c.body(new Uint8Array(data), 200, {
+      'content-type': MIME_BY_EXT[ext] || 'application/octet-stream',
+      // 文件名带时间戳随机串，内容不可变，放心长缓存
+      'cache-control': 'public, max-age=31536000, immutable',
+    });
+  } catch {
+    return c.text('not found', 404);
+  }
 });
 
 // 静态资源（构建后的看板 UI）

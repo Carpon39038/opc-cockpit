@@ -1,4 +1,5 @@
 import { getDb } from './db';
+import { deleteFiles } from './files';
 import {
   Activity,
   ActivityKind,
@@ -13,12 +14,18 @@ import {
   Project,
   ProjectStatus,
   ProjectWithStats,
+  RESEARCH_STATUSES,
+  Research,
+  ResearchItem,
+  ResearchStatus,
+  ResearchWithStats,
   STATUSES,
   STATUS_LABELS,
   Status,
   Task,
   isAgent,
   kbRef,
+  researchRef,
   taskRef,
 } from './types';
 
@@ -743,4 +750,289 @@ export function updateKnowledge(id: number, input: KnowledgeUpdateInput, actor: 
 export function deleteKnowledge(id: number): void {
   getKnowledge(id); // 不存在则抛 404
   getDb().prepare('DELETE FROM knowledge WHERE id = ?').run(id);
+}
+
+// ---------------- 调研 ----------------
+
+function assertResearchStatus(s: string): asserts s is ResearchStatus {
+  if (!RESEARCH_STATUSES.includes(s as ResearchStatus)) {
+    throw new StoreError(`无效调研状态: ${s}（可选: ${RESEARCH_STATUSES.join(', ')}）`);
+  }
+}
+
+function assertRating(r: number): void {
+  if (!Number.isInteger(r) || r < 0 || r > 5) {
+    throw new StoreError(`无效评级: ${r}（0 = 未评级，1-5 星）`);
+  }
+}
+
+const RESEARCH_SELECT = `SELECT r.*, t.title AS task_title FROM research r
+  LEFT JOIN tasks t ON t.id = r.task_id`;
+
+export function getResearch(id: number): Research {
+  const row = getDb().prepare(`${RESEARCH_SELECT} WHERE r.id = ?`).get(id) as Research | undefined;
+  if (!row) throw new StoreError(`调研 ${researchRef(id)} 不存在`, 404);
+  return row;
+}
+
+export function getResearchItems(researchId: number): ResearchItem[] {
+  return getDb()
+    .prepare('SELECT * FROM research_items WHERE research_id = ? ORDER BY id ASC')
+    .all(researchId) as unknown as ResearchItem[];
+}
+
+export type ResearchDetail = Research & { items: ResearchItem[] };
+
+export function getResearchDetail(id: number): ResearchDetail {
+  return { ...getResearch(id), items: getResearchItems(id) };
+}
+
+export interface ResearchFilters {
+  status?: string;
+  project?: string;
+  q?: string;
+  task_id?: number;
+}
+
+export function listResearch(filters: ResearchFilters = {}): ResearchWithStats[] {
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  if (filters.status && filters.status !== 'all') {
+    assertResearchStatus(filters.status);
+    where.push('r.status = ?');
+    params.push(filters.status);
+  }
+  if (filters.project) {
+    where.push('lower(r.project) = lower(?)');
+    params.push(filters.project);
+  }
+  if (filters.task_id) {
+    where.push('r.task_id = ?');
+    params.push(filters.task_id);
+  }
+  if (filters.q) {
+    where.push('(r.title LIKE ? OR r.question LIKE ? OR r.conclusion LIKE ?)');
+    const kw = `%${filters.q}%`;
+    params.push(kw, kw, kw);
+  }
+  const sql = `SELECT r.*, t.title AS task_title,
+      (SELECT COUNT(*) FROM research_items i WHERE i.research_id = r.id) AS item_count,
+      (SELECT i.image FROM research_items i WHERE i.research_id = r.id AND i.image != ''
+       ORDER BY i.id DESC LIMIT 1) AS cover
+    FROM research r LEFT JOIN tasks t ON t.id = r.task_id
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY r.updated_at DESC`;
+  const rows = getDb().prepare(sql).all(...params) as unknown as ResearchWithStats[];
+  return rows.map((r) => ({ ...r, cover: r.cover ?? '' }));
+}
+
+export interface ResearchCreateInput {
+  title: string;
+  question?: string;
+  project?: string;
+  task_id?: number;
+  creator?: string;
+}
+
+export function createResearch(input: ResearchCreateInput, actor: string): Research {
+  const title = input.title?.trim();
+  if (!title) throw new StoreError('标题不能为空');
+  const taskId = input.task_id || 0;
+  if (taskId) getTask(taskId); // 关联任务必须存在
+  const ts = now();
+  const result = getDb()
+    .prepare(
+      `INSERT INTO research (title, question, project, task_id, creator, actor, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(title, input.question || '', input.project?.trim() || '', taskId, input.creator || '', actor, ts, ts);
+  const id = Number(result.lastInsertRowid);
+  if (input.project?.trim()) ensureProject(input.project);
+  if (taskId) log(taskId, actor, 'research', `发起调研 ${researchRef(id)}「${title}」`, { research_id: id });
+  return getResearch(id);
+}
+
+export interface ResearchUpdateInput {
+  title?: string;
+  question?: string;
+  status?: string;
+  conclusion?: string;
+  project?: string;
+  task_id?: number;
+}
+
+export function updateResearch(id: number, input: ResearchUpdateInput, actor: string): Research {
+  const research = getResearch(id);
+  if (input.status !== undefined) assertResearchStatus(input.status);
+  if (input.task_id) getTask(input.task_id);
+  const fields: string[] = [];
+  const params: (string | number)[] = [];
+  const apply = (key: string, value: string | number | undefined) => {
+    if (value === undefined || value === (research as unknown as Record<string, string | number>)[key]) return;
+    fields.push(`${key} = ?`);
+    params.push(value);
+  };
+  apply('title', input.title?.trim());
+  apply('question', input.question);
+  apply('status', input.status);
+  apply('conclusion', input.conclusion);
+  apply('project', input.project === undefined ? undefined : input.project.trim());
+  apply('task_id', input.task_id);
+  if (!fields.length) return research;
+  params.push(now(), id);
+  getDb().prepare(`UPDATE research SET ${fields.join(', ')}, updated_at = ? WHERE id = ?`).run(...params);
+  if (input.project?.trim()) ensureProject(input.project);
+  const updated = getResearch(id);
+  // 结论首次写入/更新时在关联任务留痕，看板运行日志可见
+  if (input.conclusion !== undefined && input.conclusion !== research.conclusion && updated.task_id) {
+    log(updated.task_id, actor, 'research', `调研 ${researchRef(id)}「${updated.title}」结论已更新`, { research_id: id });
+  } else if (input.task_id && input.task_id !== research.task_id) {
+    log(input.task_id, actor, 'research', `关联调研 ${researchRef(id)}「${updated.title}」`, { research_id: id });
+  }
+  return updated;
+}
+
+export function deleteResearch(id: number): void {
+  getResearch(id); // 不存在则抛 404
+  const db = getDb();
+  const images = getResearchItems(id).map((i) => i.image);
+  db.prepare('DELETE FROM research_items WHERE research_id = ?').run(id);
+  db.prepare('DELETE FROM research WHERE id = ?').run(id);
+  deleteFiles(images);
+}
+
+export function getResearchItem(id: number): ResearchItem {
+  const row = getDb().prepare('SELECT * FROM research_items WHERE id = ?').get(id) as
+    | ResearchItem
+    | undefined;
+  if (!row) throw new StoreError(`资料条目 #${id} 不存在`, 404);
+  return row;
+}
+
+export interface ResearchItemInput {
+  title: string;
+  url?: string;
+  image?: string;
+  body?: string;
+  tags?: string;
+  rating?: number;
+  creator?: string;
+}
+
+/** 往资料池加一条资料卡（image 传已存入附件目录的文件名） */
+export function addResearchItem(researchId: number, input: ResearchItemInput, actor: string): ResearchItem {
+  const research = getResearch(researchId);
+  const title = input.title?.trim();
+  if (!title) throw new StoreError('标题不能为空');
+  const rating = input.rating ?? 0;
+  assertRating(rating);
+  const ts = now();
+  const result = getDb()
+    .prepare(
+      `INSERT INTO research_items (research_id, title, url, image, body, tags, rating, creator, actor, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      research.id,
+      title,
+      input.url?.trim() || '',
+      input.image?.trim() || '',
+      input.body || '',
+      normalizeTags(input.tags || ''),
+      rating,
+      input.creator || '',
+      actor,
+      ts,
+      ts
+    );
+  // 资料池有动静就算调研在推进，更新调研时间戳让列表浮上来
+  getDb().prepare('UPDATE research SET updated_at = ? WHERE id = ?').run(ts, research.id);
+  return getResearchItem(Number(result.lastInsertRowid));
+}
+
+export type ResearchItemUpdateInput = Partial<Omit<ResearchItemInput, 'creator'>>;
+
+export function updateResearchItem(id: number, input: ResearchItemUpdateInput, actor: string): ResearchItem {
+  void actor;
+  const item = getResearchItem(id);
+  if (input.rating !== undefined) assertRating(input.rating);
+  const fields: string[] = [];
+  const params: (string | number)[] = [];
+  const apply = (key: string, value: string | number | undefined) => {
+    if (value === undefined || value === (item as unknown as Record<string, string | number>)[key]) return;
+    fields.push(`${key} = ?`);
+    params.push(value);
+  };
+  apply('title', input.title?.trim());
+  apply('url', input.url === undefined ? undefined : input.url.trim());
+  apply('image', input.image === undefined ? undefined : input.image.trim());
+  apply('body', input.body);
+  apply('tags', input.tags === undefined ? undefined : normalizeTags(input.tags));
+  apply('rating', input.rating);
+  if (!fields.length) return item;
+  params.push(now(), id);
+  getDb().prepare(`UPDATE research_items SET ${fields.join(', ')}, updated_at = ? WHERE id = ?`).run(...params);
+  // 换图后清掉旧附件
+  if (input.image !== undefined && item.image && input.image.trim() !== item.image) {
+    deleteFiles([item.image]);
+  }
+  return getResearchItem(id);
+}
+
+export function deleteResearchItem(id: number): void {
+  const item = getResearchItem(id);
+  getDb().prepare('DELETE FROM research_items WHERE id = ?').run(id);
+  deleteFiles([item.image]);
+}
+
+/** 结论沉淀到知识库时附带的精选参考：4 星以上全带，没有高星则取前几条 */
+function distillRefs(items: ResearchItem[]): string {
+  const starred = items.filter((i) => i.rating >= 4);
+  const picked = (starred.length ? starred : items).slice(0, 12);
+  if (!picked.length) return '';
+  const lines = picked
+    .sort((a, b) => b.rating - a.rating || a.id - b.id)
+    .map((i) => {
+      const name = i.url ? `[${i.title}](${i.url})` : i.title;
+      return `- ${name}${i.rating ? ` ★${i.rating}` : ''}`;
+    });
+  return `\n\n## 精选参考\n\n${lines.join('\n')}`;
+}
+
+export interface DistillOptions {
+  type?: string;
+  global?: boolean;
+  creator?: string;
+}
+
+/**
+ * 把调研结论沉淀为知识库条目（调研是生产线，知识库是仓库）。
+ * 生成 K-x 后调研转为「已归档」。
+ */
+export function distillResearch(id: number, actor: string, opts: DistillOptions = {}): { research: Research; entry: KnowledgeEntry } {
+  const research = getResearch(id);
+  if (!research.conclusion.trim()) {
+    throw new StoreError(`调研 ${researchRef(id)} 还没有结论，先 conclude 写总结再沉淀`);
+  }
+  const items = getResearchItems(id);
+  const body = `> 源自调研 ${researchRef(id)}「${research.title}」\n\n${research.conclusion}${distillRefs(items)}`;
+  const entry = createKnowledge(
+    {
+      type: opts.type || 'knowledge',
+      title: research.title,
+      body,
+      project: opts.global ? '' : research.project,
+      task_id: research.task_id || undefined,
+      creator: opts.creator,
+    },
+    actor
+  );
+  const updated = updateResearch(id, { status: 'archived' }, actor);
+  if (research.task_id) {
+    log(research.task_id, actor, 'research', `调研 ${researchRef(id)} 沉淀为 ${kbRef(entry.id)}`, {
+      research_id: id,
+      kb_id: entry.id,
+    });
+  }
+  return { research: updated, entry };
 }

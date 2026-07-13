@@ -1,6 +1,6 @@
 # OPC Cockpit
 
-一人公司驾驶舱。当前已实现：驾驶舱首页 + 任务看板 + 知识库（Web UI + `opc` CLI + SQLite），AI Agent 是一等公民工作者。
+一人公司驾驶舱。当前已实现：驾驶舱首页 + 任务看板 + 知识库 + 调研（Web UI + `opc` CLI + SQLite），AI Agent 是一等公民工作者。
 
 ## 命令
 
@@ -13,8 +13,8 @@
 - `src/shared/` — 类型、SQLite（node:sqlite，零原生依赖）、任务操作逻辑（server 与 CLI 共用）
 - `src/server/` — Hono API + 伺服看板静态文件
 - `src/cli/` — `opc` 命令行
-- `web/src/` — React UI，hash 路由：`#/` 驾驶舱首页（pages/Home）、`#/board` 任务看板（pages/Board）、`#/projects` 项目中心（pages/Projects）、`#/kb` 知识库（pages/Knowledge）；App.tsx 持有共享状态（轮询/抽屉/新建弹窗），新模块加页面 + NavRail 项即可
-- 数据在 `data/opc.db`（gitignored），可用 `OPC_DB` 环境变量指定
+- `web/src/` — React UI，hash 路由：`#/` 驾驶舱首页（pages/Home）、`#/board` 任务看板（pages/Board）、`#/projects` 项目中心（pages/Projects）、`#/kb` 知识库（pages/Knowledge）、`#/research` 调研（pages/Research）；App.tsx 持有共享状态（轮询/抽屉/新建弹窗），新模块加页面 + NavRail 项即可
+- 数据在 `data/opc.db`（gitignored），可用 `OPC_DB` 环境变量指定；调研截图等附件存同目录的 `files/`，server 经 `/files/<文件名>` 伺服
 
 ## 任务看板协议（AI 必读）
 
@@ -65,5 +65,22 @@
 
 **什么值得记：** 非显而易见的问题及其解法（下次还会遇到）、搜了半天才找到的关键资料（带 `--url`）、试错才发现的约束或陷阱。显而易见的、只对当前任务有意义的不要记。
 **怎么记：** 标题一句话说清；正文写现象 → 原因 → 解法（支持 Markdown）；跨项目通用的加 `--global`，否则默认挂当前项目；正在做任务时加 `--task T-x` 关联（会在任务动态留痕）；AI 记录时带 `--model`。`issue` 解决后用 `opc kb edit K-x --type pitfall -d "补充结论"` 转成坑。
+
+## 调研协议（AI 必读）
+
+调研模块（`opc research`，别名 `rs`）是把不确定问题变成可执行判断的工作台：**研究问题 → 资料池（链接/截图/摘要）→ 结论 → 沉淀到知识库**。接到调研类任务（找参考、竞品对比、方案比较…）时用它承载过程，而不是只在任务评论里贴长文。
+
+```bash
+./opc research add "绚丽特效塔防参考" -d "找 10 个以上…每个记录链接/截图/爽点" --task T-3 --model <你的模型ID>
+./opc research show R-1                # 领任务后先看研究问题和已有资料（那是验收标准）
+./opc research item R-1 "Kingdom Rush" --url https://... --image-url https://.../header.jpg \
+    -d "**爽点**：弹道拖尾+命中爆闪…" --tags 塔防 --rating 4 --model <你的模型ID>
+./opc research item R-1 "本地截图" --image /tmp/shot.png -d "…"   # 浏览器截的图走本地文件
+./opc research conclude R-1 -m "## 总结\n…"    # 收集完写综合结论 → 状态「已有结论」
+./opc research distill R-1                     # 结论沉淀为知识库条目并归档（值得长期复用时）
+./opc research list / edit / edit-item / rm-item / rm             # 其余同 kb 直觉
+```
+
+**怎么用好：** 一张资料卡 = 一个对象（游戏/文章/方案），标题写名字，`-d` 写摘要和分析（支持 Markdown），链接和截图尽量都带；`--rating` 标出最值得参考的（distill 时 4 星以上进精选）；一次调研里多类对象用 `--tags` 分组（如 `塔防` / `幸存者like`）。研究问题里写了数量要求（如「10 个以上」）就按要求凑满再收口。截图优先 `--image-url` 抓官方图；自己截图存本地再 `--image`。**图和游戏必须对上**——不确定的宁可不带图。
 
 用户在看板 UI（http://localhost:5175）上看到你的一切操作——运行日志实时滚动。

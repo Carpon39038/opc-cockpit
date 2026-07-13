@@ -41,6 +41,17 @@ const ITEMS: NavItem[] = [
     ),
   },
   {
+    path: '/research',
+    zh: '调研',
+    icon: (
+      <svg viewBox="0 0 24 24" {...S}>
+        <path d="M10 3h4" />
+        <path d="M10 3v6l-4.6 8.2A2 2 0 0 0 7.2 20h9.6a2 2 0 0 0 1.8-2.8L14 9V3" />
+        <path d="M8 14h8" />
+      </svg>
+    ),
+  },
+  {
     path: '/kb',
     zh: '知识',
     icon: (
@@ -60,16 +71,6 @@ const SOON: { zh: string; icon: ReactElement }[] = [
       <svg viewBox="0 0 24 24" {...S}>
         <path d="M4 5h16v14H4z" />
         <path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20" />
-      </svg>
-    ),
-  },
-  {
-    zh: '调研',
-    icon: (
-      <svg viewBox="0 0 24 24" {...S}>
-        <path d="M10 3h4" />
-        <path d="M10 3v6l-4.6 8.2A2 2 0 0 0 7.2 20h9.6a2 2 0 0 0 1.8-2.8L14 9V3" />
-        <path d="M8 14h8" />
       </svg>
     ),
   },

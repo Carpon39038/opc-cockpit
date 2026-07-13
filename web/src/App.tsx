@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, KnowledgeEntry, ProjectWithStats, Status, Task } from '../../src/shared/types';
+import type { Activity, KnowledgeEntry, ProjectWithStats, ResearchWithStats, Status, Task } from '../../src/shared/types';
 import { isAgent } from '../../src/shared/types';
 import { api, type KbPatch, type ProjectPatch, type TaskDetail } from './api';
 import { Clock } from './components/Clock';
@@ -10,6 +10,7 @@ import { BoardPage } from './pages/Board';
 import { HomePage } from './pages/Home';
 import { KnowledgePage } from './pages/Knowledge';
 import { ProjectsPage } from './pages/Projects';
+import { ResearchPage } from './pages/Research';
 
 function useRoute(): string {
   const [route, setRoute] = useState(() => location.hash.replace(/^#/, '') || '/');
@@ -26,6 +27,7 @@ const PAGE_TITLES: Record<string, [string, string]> = {
   '/board': ['任务看板', 'TASK BOARD'],
   '/projects': ['项目中心', 'PROJECTS'],
   '/kb': ['知识库', 'KNOWLEDGE'],
+  '/research': ['调研', 'RESEARCH'],
 };
 
 export default function App() {
@@ -34,6 +36,7 @@ export default function App() {
   const [activity, setActivity] = useState<Activity[]>([]);
   const [projects, setProjects] = useState<ProjectWithStats[]>([]);
   const [kb, setKb] = useState<KnowledgeEntry[]>([]);
+  const [research, setResearch] = useState<ResearchWithStats[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [newStatus, setNewStatus] = useState<Status | null>(null);
@@ -44,11 +47,18 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [t, a, p, k] = await Promise.all([api.tasks(), api.activity(), api.projects(), api.kb()]);
+      const [t, a, p, k, r] = await Promise.all([
+        api.tasks(),
+        api.activity(),
+        api.projects(),
+        api.kb(),
+        api.research(),
+      ]);
       setTasks(t);
       setActivity(a);
       setProjects(p);
       setKb(k);
+      setResearch(r);
       if (selectedRef.current !== null) {
         setDetail(await api.detail(selectedRef.current));
       }
@@ -166,6 +176,13 @@ export default function App() {
             onCreate={(input: KbPatch) => mutate(() => api.createKb(input))}
             onPatch={(id, fields) => mutate(() => api.patchKb(id, fields))}
             onDelete={(id) => mutate(() => api.removeKb(id))}
+            onOpenTask={openTask}
+          />
+        ) : route === '/research' ? (
+          <ResearchPage
+            list={research}
+            projects={projects.map((p) => p.name)}
+            mutate={mutate}
             onOpenTask={openTask}
           />
         ) : route === '/projects' ? (

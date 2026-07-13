@@ -65,6 +65,7 @@ export type ActivityKind =
   | 'updated'
   | 'completed'
   | 'knowledge'
+  | 'research'
   | 'dep';
 
 export interface Activity {
@@ -155,6 +156,76 @@ export function kbRef(id: number): string {
 export function parseKbRef(ref: string): number {
   const m = /^[Kk]?-?#?(\d+)$/.exec(ref.trim());
   if (!m) throw new Error(`无法识别的知识编号: ${ref}（期望形如 K-3 或 3）`);
+  return Number(m[1]);
+}
+
+// ---------------- 调研 ----------------
+
+export const RESEARCH_STATUSES = ['collecting', 'concluded', 'archived'] as const;
+export type ResearchStatus = (typeof RESEARCH_STATUSES)[number];
+
+export const RESEARCH_STATUS_LABELS: Record<ResearchStatus, string> = {
+  collecting: '收集中', // 围绕研究问题收集资料
+  concluded: '已有结论', // 写完总结，等待转化
+  archived: '已归档', // 结论已沉淀/不再跟进
+};
+
+// CLI 里允许的状态别名
+export const RESEARCH_STATUS_ALIASES: Record<string, ResearchStatus> = {
+  collecting: 'collecting',
+  open: 'collecting',
+  concluded: 'concluded',
+  done: 'concluded',
+  archived: 'archived',
+  archive: 'archived',
+};
+
+/** 一次调研：从研究问题出发，收集资料池，形成结论，最终沉淀到知识库 */
+export interface Research {
+  id: number;
+  title: string;
+  question: string; // 研究问题/目标/要求（Markdown，如「找 10 个以上…每个记录爽点」）
+  status: ResearchStatus;
+  conclusion: string; // 综合结论/总结（Markdown）
+  project: string; // 关联项目，'' = 通用
+  task_id: number; // 关联任务，0 = 无
+  creator: string; // 发起者的模型·工具（人发起为空）
+  actor: string; // 发起者身份（me / claude / ...）
+  created_at: string;
+  updated_at: string;
+  task_title?: string; // join 出来的关联任务标题
+}
+
+/** 资料池条目：一张资料卡 = 标题 + 链接 + 截图 + 摘要/摘录 + 标签 + 星级 */
+export interface ResearchItem {
+  id: number;
+  research_id: number;
+  title: string;
+  url: string; // 来源链接
+  image: string; // 截图文件名（data/files/ 下，UI 经 /files/<name> 访问），'' = 无图
+  body: string; // 摘要、关键摘录、爽点分析…（Markdown）
+  tags: string; // 逗号分隔，存储时已规范化
+  rating: number; // 0 = 未评级，1-5 星（标记参考价值）
+  creator: string;
+  actor: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 列表页用：调研 + 资料统计 */
+export interface ResearchWithStats extends Research {
+  item_count: number;
+  cover: string; // 最新一张截图的文件名，'' = 无
+}
+
+export function researchRef(id: number): string {
+  return `R-${id}`;
+}
+
+/** 接受 R-3 / r3 / #3 / 3 等写法 */
+export function parseResearchRef(ref: string): number {
+  const m = /^[Rr]?-?#?(\d+)$/.exec(ref.trim());
+  if (!m) throw new Error(`无法识别的调研编号: ${ref}（期望形如 R-3 或 3）`);
   return Number(m[1]);
 }
 
