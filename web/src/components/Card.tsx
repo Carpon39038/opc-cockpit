@@ -5,10 +5,9 @@ import { isOverdue } from '../ui';
 interface Props {
   task: Task;
   onClick: () => void;
-  onApprove?: () => void;
 }
 
-export function Card({ task, onClick, onApprove }: Props) {
+export function Card({ task, onClick }: Props) {
   const working = task.status === 'in_progress' && isAgent(task.assignee);
   const overdue = isOverdue(task.due_date) && task.status !== 'done';
   const agentInfo = [task.agent_tool, task.agent_model].filter(Boolean).join(' · ');
@@ -53,18 +52,6 @@ export function Card({ task, onClick, onApprove }: Props) {
           </span>
         )}
       </div>
-      {task.status === 'review' && onApprove && (
-        <button
-          className="approve-btn"
-          title="验收通过 → 已完成"
-          onClick={(e) => {
-            e.stopPropagation();
-            onApprove();
-          }}
-        >
-          ✓ 验收
-        </button>
-      )}
     </article>
   );
 }
