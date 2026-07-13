@@ -167,7 +167,6 @@ export default function App() {
             onOpenTask={openTask}
             onDrop={onDrop}
             onQuickAdd={(s) => setNewStatus(s)}
-            onApprove={onApprove}
           />
         ) : route === '/kb' ? (
           <KnowledgePage

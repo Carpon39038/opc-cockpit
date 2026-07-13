@@ -19,10 +19,9 @@ interface Props {
   onDrop: (id: number, to: Status) => void;
   onCardClick: (id: number) => void;
   onQuickAdd: () => void;
-  onApprove: (id: number) => void;
 }
 
-export function Column({ status, tasks, onDrop, onCardClick, onQuickAdd, onApprove }: Props) {
+export function Column({ status, tasks, onDrop, onCardClick, onQuickAdd }: Props) {
   const [over, setOver] = useState(false);
   const depth = useRef(0);
   const shown = status === 'done' ? tasks.slice(0, DONE_LIMIT) : tasks;
@@ -65,12 +64,7 @@ export function Column({ status, tasks, onDrop, onCardClick, onQuickAdd, onAppro
       </header>
       <div className="cards">
         {shown.map((t) => (
-          <Card
-            key={t.id}
-            task={t}
-            onClick={() => onCardClick(t.id)}
-            onApprove={status === 'review' ? () => onApprove(t.id) : undefined}
-          />
+          <Card key={t.id} task={t} onClick={() => onCardClick(t.id)} />
         ))}
         {tasks.length === 0 && <div className="col-empty">—</div>}
         {tasks.length > shown.length && (

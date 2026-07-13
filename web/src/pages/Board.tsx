@@ -14,10 +14,9 @@ interface Props {
   onOpenTask: (id: number) => void;
   onDrop: (id: number, to: Status) => void;
   onQuickAdd: (status: Status) => void;
-  onApprove: (id: number) => void;
 }
 
-export function BoardPage({ tasks, activity, jump, onOpenTask, onDrop, onQuickAdd, onApprove }: Props) {
+export function BoardPage({ tasks, activity, jump, onOpenTask, onDrop, onQuickAdd }: Props) {
   const [q, setQ] = useState('');
   const [who, setWho] = useState<AssigneeFilter>('all');
   const [project, setProject] = useState('all');
@@ -92,7 +91,6 @@ export function BoardPage({ tasks, activity, jump, onOpenTask, onDrop, onQuickAd
               onDrop={onDrop}
               onCardClick={onOpenTask}
               onQuickAdd={() => onQuickAdd(s)}
-              onApprove={onApprove}
             />
           ))}
         </main>

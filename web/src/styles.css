@@ -707,29 +707,6 @@ textarea::placeholder {
   }
 }
 
-.approve-btn {
-  position: absolute;
-  right: 7px;
-  bottom: 7px;
-  background: rgba(55, 217, 146, 0.13);
-  border: 1px solid rgba(55, 217, 146, 0.5);
-  color: var(--green);
-  font-size: 11px;
-  border-radius: 4px;
-  padding: 2px 8px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.13s;
-}
-
-.card:hover .approve-btn {
-  opacity: 1;
-}
-
-.approve-btn:hover {
-  background: rgba(55, 217, 146, 0.25);
-}
-
 /* ---------------- 运行日志 ---------------- */
 
 .rail {
