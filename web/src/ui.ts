@@ -73,9 +73,23 @@ export function actionText(a: Activity): string {
       return '调研';
     case 'dep':
       return '调整了前置依赖';
+    case 'attachment':
+      return '挂了附件';
     default:
       return a.kind;
   }
+}
+
+/** 附件动态里记录的文件名（时间线上显示缩略图用） */
+export function attachmentFile(a: Activity): string {
+  if (a.kind !== 'attachment') return '';
+  const file = safeMeta(a).file;
+  return typeof file === 'string' ? file : '';
+}
+
+/** 附件文件的访问地址 */
+export function fileUrl(name: string): string {
+  return `/files/${name}`;
 }
 
 /** ISO 时间戳对应的本地日期 YYYY-MM-DD */

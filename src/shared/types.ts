@@ -42,6 +42,19 @@ export interface Task {
   completed_at: string;
   /** 查询时附带：未完成的前置任务 id（逗号分隔），null/空 = 未被阻塞 */
   blocked_by?: string | null;
+  /** 查询时附带：附件图片数量 */
+  attachment_count?: number;
+}
+
+/** 任务附件图片（设计图 / 预览图 / 截图），文件存 data/files/，UI 经 /files/<name> 访问 */
+export interface TaskAttachment {
+  id: number;
+  task_id: number;
+  file: string; // 附件目录里的存储文件名
+  label: string; // 说明，如「首页设计图」，'' = 无
+  creator: string; // 上传者的模型·工具（人上传为空）
+  actor: string; // 上传者身份（me / claude / ...）
+  created_at: string;
 }
 
 /** 依赖关系里引用的任务概要 */
@@ -66,7 +79,8 @@ export type ActivityKind =
   | 'completed'
   | 'knowledge'
   | 'research'
-  | 'dep';
+  | 'dep'
+  | 'attachment';
 
 export interface Activity {
   id: number;

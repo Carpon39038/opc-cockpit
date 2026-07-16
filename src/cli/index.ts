@@ -26,6 +26,7 @@ import {
   STATUSES,
   Status,
   Task,
+  TaskAttachment,
   blockedIds,
   kbRef,
   parseKbRef,
@@ -40,6 +41,7 @@ import {
   addDeps,
   addNote,
   addResearchItem,
+  addTaskAttachment,
   claimTask,
   completeTask,
   createKnowledge,
@@ -48,6 +50,7 @@ import {
   deleteKnowledge,
   deleteResearch,
   deleteResearchItem,
+  deleteTaskAttachment,
   distillResearch,
   getDependents,
   getDeps,
@@ -57,6 +60,8 @@ import {
   getResearchItem,
   getTask,
   getTaskActivity,
+  getTaskAttachment,
+  getTaskAttachments,
   listKnowledge,
   listProjectsWithStats,
   listResearch,
@@ -237,6 +242,9 @@ function fmtActivity(a: Activity): string {
     case 'dep':
       action = '调整前置';
       break;
+    case 'attachment':
+      action = '挂了附件';
+      break;
     default:
       action = a.kind;
   }
@@ -258,7 +266,12 @@ function safeParse(s: string): Record<string, unknown> {
   }
 }
 
-function printDetail(t: Task, activity: Activity[], kb: KnowledgeEntry[] = [], deps: DepSummary[] = [], dependents: DepSummary[] = []) {
+function fmtAttachment(a: TaskAttachment): string {
+  const who = a.actor ? ` · ${a.actor}` : '';
+  return `#${a.id} ${a.label ? `${a.label}（${a.file}）` : a.file}${who}`;
+}
+
+function printDetail(t: Task, activity: Activity[], kb: KnowledgeEntry[] = [], deps: DepSummary[] = [], dependents: DepSummary[] = [], attachments: TaskAttachment[] = []) {
   console.log(`${taskRef(t.id)} [${t.priority}] ${t.title}`);
   const agentInfo = [t.agent_tool, t.agent_model].filter(Boolean).join(' · ');
   const who = t.assignee ? `${t.assignee}${agentInfo ? `（${agentInfo}）` : ''}` : '未分配';
@@ -267,6 +280,10 @@ function printDetail(t: Task, activity: Activity[], kb: KnowledgeEntry[] = [], d
   if (t.description) {
     console.log('---');
     console.log(t.description);
+  }
+  if (attachments.length) {
+    console.log(`--- 附件（${attachments.length} 张，看板任务详情可预览）---`);
+    for (const a of attachments) console.log('  ' + fmtAttachment(a));
   }
   if (deps.length) {
     const unmet = deps.filter((d) => d.status !== 'done');
@@ -374,8 +391,9 @@ program
     const kb = relatedKnowledge(t.project);
     const deps = getDeps(id);
     const dependents = getDependents(id);
-    out({ ...t, deps, dependents, activity, related_knowledge: kb }, () =>
-      printDetail(t, activity, kb, deps, dependents)
+    const attachments = getTaskAttachments(id);
+    out({ ...t, deps, dependents, activity, related_knowledge: kb, attachments }, () =>
+      printDetail(t, activity, kb, deps, dependents, attachments)
     );
   });
 
@@ -433,7 +451,8 @@ program
     const kb = relatedKnowledge(t.project);
     const deps = getDeps(t.id);
     const dependents = getDependents(t.id);
-    out({ ...t, deps, dependents, activity, related_knowledge: kb }, () => {
+    const attachments = getTaskAttachments(t.id);
+    out({ ...t, deps, dependents, activity, related_knowledge: kb, attachments }, () => {
       const info = [tool, model].filter(Boolean).join(' · ');
       const crossProject =
         preferProject && t.project && t.project.toLowerCase() !== preferProject.toLowerCase();
@@ -442,7 +461,7 @@ program
         console.log(`  （当前项目 ${preferProject} 无可领任务，已跨项目领取 ${t.project}）`);
       }
       console.log('');
-      printDetail(t, activity, kb, deps, dependents);
+      printDetail(t, activity, kb, deps, dependents, attachments);
     });
   });
 
@@ -543,6 +562,42 @@ program
         for (const d of dependents) console.log('  ' + fmtDep(d));
       }
     });
+  });
+
+program
+  .command('attach <ref> [image]')
+  .description('给任务挂附件图片（设计图/预览图/截图）：带本地文件路径或 --url 挂载，不带参数列出，--rm 删除')
+  .option('--url <url>', '网络图片（下载进附件目录）')
+  .option('--label <label>', '说明，如「首页设计图」')
+  .option('--rm <id>', '删除附件（编号见列表，如 5）')
+  .option('--tool <tool>', '上传者工具名（默认自动识别）')
+  .option('--model <model>', '上传者模型 ID（AI 上传时传自己的模型，如 claude-fable-5）')
+  .action(async (ref: string, image: string | undefined, opts: { url?: string; label?: string; rm?: string; tool?: string; model?: string }) => {
+    const taskId = parseRef(ref);
+    if (opts.rm) {
+      const rmId = Number(opts.rm.replace(/^#/, ''));
+      const att = getTaskAttachment(rmId);
+      if (att.task_id !== taskId) throw new StoreError(`附件 #${rmId} 不属于 ${taskRef(taskId)}`);
+      deleteTaskAttachment(rmId);
+      out({ ok: true, id: rmId }, () => console.log(`✓ 已删除 ${taskRef(taskId)} 的附件 #${rmId}「${att.label || att.file}」`));
+      return;
+    }
+    if (!image && !opts.url) {
+      // 不带参数 = 列出附件
+      const t = getTask(taskId);
+      const attachments = getTaskAttachments(taskId);
+      out(attachments, () => {
+        console.log(`${taskRef(t.id)}「${t.title}」的附件（${attachments.length} 张）:`);
+        if (!attachments.length) console.log(`  （无，opc attach ${taskRef(t.id)} <图片路径> 或 --url <链接> 挂载）`);
+        for (const a of attachments) console.log('  ' + fmtAttachment(a));
+      });
+      return;
+    }
+    const file = image ? importLocalImage(image) : await fetchImageToFile(opts.url!);
+    const tool = opts.tool ?? detectTool();
+    const creator = [opts.model ?? '', tool].filter(Boolean).join(' · ');
+    const att = addTaskAttachment(taskId, { file, label: opts.label, creator }, actor());
+    out(att, () => console.log(`✓ ${taskRef(taskId)} 附件 +1: ${fmtAttachment(att)}`));
   });
 
 function fmtProjectStats(p: ProjectWithStats): string {

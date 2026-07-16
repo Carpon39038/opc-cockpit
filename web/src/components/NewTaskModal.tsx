@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Status, Task } from '../../../src/shared/types';
 import { PRIORITIES, STATUSES, STATUS_LABELS, taskRef } from '../../../src/shared/types';
+import { api } from '../api';
+import { fileUrl } from '../ui';
 
 interface Props {
   presetStatus: Status;
@@ -8,7 +10,8 @@ interface Props {
   /** 未完成任务，用作前置候选 */
   tasks: Task[];
   onClose: () => void;
-  onCreate: (input: Partial<Task> & { deps?: number[] }) => void;
+  /** files = 已上传的附件文件名，创建任务后挂载 */
+  onCreate: (input: Partial<Task> & { deps?: number[] }, files: string[]) => void;
 }
 
 export function NewTaskModal({ presetStatus, projects, tasks, onClose, onCreate }: Props) {
@@ -19,7 +22,37 @@ export function NewTaskModal({ presetStatus, projects, tasks, onClose, onCreate 
   const [status, setStatus] = useState<Status>(presetStatus);
   const [due, setDue] = useState('');
   const [deps, setDeps] = useState<number[]>([]);
+  const [files, setFiles] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const uploadAll = async (list: (File | Blob)[]) => {
+    if (!list.length) return;
+    setUploading(true);
+    try {
+      for (const f of list) {
+        const { file } = await api.uploadFile(f);
+        setFiles((prev) => [...prev, file]);
+      }
+    } catch {
+      // 上传失败不阻塞建任务，之后可在任务抽屉里补传
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // 弹窗内粘贴截图 = 加附件
+  const onPaste = (e: React.ClipboardEvent) => {
+    const list = [...e.clipboardData.items]
+      .filter((it) => it.type.startsWith('image/'))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (list.length) {
+      e.preventDefault();
+      uploadAll(list);
+    }
+  };
 
   // 前置候选：未完成的任务，当前填的项目排前
   const depCandidates = tasks
@@ -37,22 +70,25 @@ export function NewTaskModal({ presetStatus, projects, tasks, onClose, onCreate 
   }, [onClose]);
 
   const submit = () => {
-    if (!title.trim()) return;
-    onCreate({
-      title: title.trim(),
-      description: desc,
-      priority,
-      project: project.trim(),
-      status,
-      due_date: due,
-      deps: deps.length ? deps : undefined,
-    });
+    if (!title.trim() || uploading) return;
+    onCreate(
+      {
+        title: title.trim(),
+        description: desc,
+        priority,
+        project: project.trim(),
+        status,
+        due_date: due,
+        deps: deps.length ? deps : undefined,
+      },
+      files
+    );
   };
 
   return (
     <>
       <div className="backdrop" onClick={onClose} />
-      <div className="modal">
+      <div className="modal" onPaste={onPaste}>
         <header className="modal-head">
           <span className="modal-title">新建任务</span>
           <button className="icon-btn" onClick={onClose} title="关闭 (Esc)">
@@ -114,6 +150,39 @@ export function NewTaskModal({ presetStatus, projects, tasks, onClose, onCreate 
               <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
             </label>
           </div>
+          <div className="field">
+            <span>附件图片（设计图 / 预览图 / 截图，可直接粘贴到本窗口）</span>
+            <div className="att-grid att-grid-modal">
+              {files.map((f, i) => (
+                <span key={f} className="att-thumb" title={f}>
+                  <img src={fileUrl(f)} alt="" />
+                  <button
+                    className="att-thumb-rm"
+                    title="移除"
+                    onClick={() => setFiles((prev) => prev.filter((_, x) => x !== i))}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+              <button className="att-add" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                {uploading ? '上传中…' : '＋ 图片'}
+                <span className="att-add-hint">粘贴 / 选择</span>
+              </button>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                const list = [...(e.target.files ?? [])];
+                if (list.length) uploadAll(list);
+                e.target.value = '';
+              }}
+            />
+          </div>
           <label className="field">
             <span>前置任务（全部完成后才可领取，防止并发做出依赖冲突）</span>
             <select
@@ -150,8 +219,8 @@ export function NewTaskModal({ presetStatus, projects, tasks, onClose, onCreate 
           <button className="btn" onClick={onClose}>
             取消
           </button>
-          <button className="btn btn-primary" onClick={submit} disabled={!title.trim()}>
-            创建
+          <button className="btn btn-primary" onClick={submit} disabled={!title.trim() || uploading}>
+            {uploading ? '图片上传中…' : '创建'}
           </button>
         </footer>
       </div>

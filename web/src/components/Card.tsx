@@ -36,6 +36,11 @@ export function Card({ task, onClick, onApprove }: Props) {
           </span>
         )}
         {task.project && <span className="tag">{task.project}</span>}
+        {(task.attachment_count ?? 0) > 0 && (
+          <span className="att-count" title={`${task.attachment_count} 张附件图`}>
+            🖼 {task.attachment_count}
+          </span>
+        )}
         {task.due_date && (
           <span className={`due ${overdue ? 'due-over' : ''}`}>
             {overdue ? '⚠ ' : ''}
