@@ -118,6 +118,16 @@ export function getDb(): DatabaseSync {
       PRIMARY KEY (task_id, depends_on)
     ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS idx_deps_on ON task_deps(depends_on);
+    CREATE TABLE IF NOT EXISTS task_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      file TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      creator TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_attachments_task ON task_attachments(task_id);
   `);
   migrate(db);
   return db;

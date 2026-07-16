@@ -23,6 +23,7 @@ import {
   STATUS_LABELS,
   Status,
   Task,
+  TaskAttachment,
   isAgent,
   kbRef,
   researchRef,
@@ -59,12 +60,14 @@ function log(taskId: number, actor: string, kind: ActivityKind, content = '', me
     .run(taskId, actor, kind, content, JSON.stringify(meta), now());
 }
 
-/** 任务查询都附带 blocked_by：未完成前置任务的 id 逗号串（null = 未被阻塞） */
+/** 任务查询都附带 blocked_by（未完成前置任务的 id 逗号串，null = 未被阻塞）和附件数 */
 const TASK_SELECT = `SELECT tasks.*, (
     SELECT group_concat(d.depends_on) FROM task_deps d
     JOIN tasks p ON p.id = d.depends_on
     WHERE d.task_id = tasks.id AND p.status != 'done'
-  ) AS blocked_by FROM tasks`;
+  ) AS blocked_by, (
+    SELECT COUNT(*) FROM task_attachments att WHERE att.task_id = tasks.id
+  ) AS attachment_count FROM tasks`;
 
 /** 就绪条件：不存在未完成的前置任务（自动领取 / next 的 SQL 过滤） */
 const NOT_BLOCKED = `NOT EXISTS (
@@ -459,9 +462,67 @@ export function updateTask(id: number, input: UpdateInput, actor: string): Task 
 export function deleteTask(id: number): void {
   getTask(id); // 不存在则抛 404
   const db = getDb();
+  const files = getTaskAttachments(id).map((a) => a.file);
   db.prepare('DELETE FROM activity WHERE task_id = ?').run(id);
   db.prepare('DELETE FROM task_deps WHERE task_id = ? OR depends_on = ?').run(id, id);
+  db.prepare('DELETE FROM task_attachments WHERE task_id = ?').run(id);
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  deleteFiles(files);
+}
+
+// ---------------- 附件 ----------------
+
+export function getTaskAttachments(taskId: number): TaskAttachment[] {
+  return getDb()
+    .prepare('SELECT * FROM task_attachments WHERE task_id = ? ORDER BY id ASC')
+    .all(taskId) as unknown as TaskAttachment[];
+}
+
+export function getTaskAttachment(id: number): TaskAttachment {
+  const row = getDb().prepare('SELECT * FROM task_attachments WHERE id = ?').get(id) as
+    | TaskAttachment
+    | undefined;
+  if (!row) throw new StoreError(`附件 #${id} 不存在`, 404);
+  return row;
+}
+
+export interface AttachmentInput {
+  file: string; // 已存入附件目录的文件名
+  label?: string;
+  creator?: string;
+}
+
+/** 给任务挂附件图片（file 传已存入附件目录的文件名），会在任务动态留痕 */
+export function addTaskAttachment(taskId: number, input: AttachmentInput, actor: string): TaskAttachment {
+  const task = getTask(taskId);
+  const file = input.file?.trim();
+  if (!file) throw new StoreError('附件文件名不能为空');
+  const label = input.label?.trim() || '';
+  const ts = now();
+  const result = getDb()
+    .prepare(
+      `INSERT INTO task_attachments (task_id, file, label, creator, actor, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(task.id, file, label, input.creator || '', actor, ts);
+  const id = Number(result.lastInsertRowid);
+  getDb().prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(ts, task.id);
+  log(task.id, actor, 'attachment', label || file, { attachment_id: id, file });
+  return getTaskAttachment(id);
+}
+
+/** 改附件说明 */
+export function updateTaskAttachment(id: number, label: string): TaskAttachment {
+  const att = getTaskAttachment(id);
+  getDb().prepare('UPDATE task_attachments SET label = ? WHERE id = ?').run(label.trim(), att.id);
+  return getTaskAttachment(id);
+}
+
+/** 删附件（连同文件） */
+export function deleteTaskAttachment(id: number): void {
+  const att = getTaskAttachment(id);
+  getDb().prepare('DELETE FROM task_attachments WHERE id = ?').run(id);
+  deleteFiles([att.file]);
 }
 
 /** 全局最近动态（带任务标题） */

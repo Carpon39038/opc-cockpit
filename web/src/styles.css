@@ -2751,3 +2751,175 @@ textarea::placeholder {
 .rs-lightbox-md {
   font-size: 12.5px;
 }
+
+/* ---------------- 任务附件 ---------------- */
+
+.att-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.att-thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-3);
+  overflow: hidden;
+  cursor: zoom-in;
+  transition: border-color 0.14s, transform 0.14s;
+  display: block;
+}
+
+.att-thumb:hover {
+  border-color: var(--line);
+  transform: translateY(-1px);
+}
+
+.att-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.att-thumb-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  font-size: 10.5px;
+  color: #e8f0f4;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.att-thumb-rm {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #e8f0f4;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.att-thumb-rm:hover {
+  background: var(--red);
+}
+
+.att-add {
+  aspect-ratio: 4 / 3;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  transition: border-color 0.14s, color 0.14s;
+}
+
+.att-add:hover:not(:disabled) {
+  border-color: var(--cyan);
+  color: var(--text);
+}
+
+.att-add:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.att-add-hint {
+  font-size: 10px;
+  color: var(--dim);
+}
+
+/* 新建弹窗里的缩略图只是暂存预览，不可点击放大 */
+.att-grid-modal .att-thumb {
+  cursor: default;
+}
+
+.att-grid-modal .att-thumb:hover {
+  transform: none;
+}
+
+/* 看板卡片上的附件数 */
+.att-count {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* 时间线里的附件缩略图 */
+.tl-att {
+  display: inline-block;
+  margin-top: 4px;
+  max-width: 200px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tl-att img {
+  display: block;
+  max-width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+}
+
+.tl-att:hover {
+  border-color: var(--line);
+}
+
+/* 附件大图浮层（叠在抽屉之上） */
+.backdrop-top {
+  z-index: 60;
+}
+
+.att-lightbox {
+  z-index: 70;
+}
+
+.att-lightbox .modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.att-label-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+
+.att-label-input:hover {
+  border-color: var(--line-soft);
+}
+
+.att-label-input:focus {
+  border-color: var(--line);
+  background: var(--panel-2);
+}

@@ -215,6 +215,16 @@ export default function App() {
           }}
           onDeps={(body) => mutate(() => api.setDeps(detail.id, body))}
           onOpenTask={openTask}
+          onAddAttachments={(files) =>
+            mutate(async () => {
+              for (const f of files) {
+                const { file } = await api.uploadFile(f);
+                await api.addAttachment(detail.id, file);
+              }
+            })
+          }
+          onPatchAttachment={(id, label) => mutate(() => api.patchAttachment(id, label))}
+          onRemoveAttachment={(id) => mutate(() => api.removeAttachment(id))}
         />
       )}
 
@@ -224,9 +234,12 @@ export default function App() {
           projects={[...new Set([...projects.map((p) => p.name), ...tasks.map((t) => t.project)])].filter(Boolean).sort()}
           tasks={tasks}
           onClose={() => setNewStatus(null)}
-          onCreate={(input) => {
+          onCreate={(input, files) => {
             setNewStatus(null);
-            mutate(() => api.create(input));
+            mutate(async () => {
+              const t = await api.create(input);
+              for (const f of files) await api.addAttachment(t.id, f);
+            });
           }}
         />
       )}

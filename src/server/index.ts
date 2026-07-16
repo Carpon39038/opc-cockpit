@@ -12,6 +12,7 @@ import {
   addDeps,
   addNote,
   addResearchItem,
+  addTaskAttachment,
   claimTask,
   completeTask,
   createKnowledge,
@@ -22,6 +23,7 @@ import {
   deleteResearch,
   deleteResearchItem,
   deleteTask,
+  deleteTaskAttachment,
   distillResearch,
   getDependents,
   getDeps,
@@ -30,6 +32,7 @@ import {
   getResearchDetail,
   getTask,
   getTaskActivity,
+  getTaskAttachments,
   listKnowledge,
   listProjectNames,
   listProjectsWithStats,
@@ -44,6 +47,7 @@ import {
   updateResearch,
   updateResearchItem,
   updateTask,
+  updateTaskAttachment,
 } from '../shared/store';
 
 const app = new Hono();
@@ -84,6 +88,7 @@ app.get('/api/tasks/:id', (c) => {
     dependents: getDependents(id),
     activity: getTaskActivity(id),
     knowledge: listKnowledge({ task_id: id }),
+    attachments: getTaskAttachments(id),
   });
 });
 
@@ -374,7 +379,30 @@ app.delete('/api/research-items/:id', (c) => {
   return c.json({ ok: true });
 });
 
-// ---------------- 附件（截图上传 / 访问） ----------------
+// ---------------- 附件（截图上传 / 访问 / 挂到任务） ----------------
+
+// 挂附件到任务：body { file: 已上传的文件名, label?, creator?, actor? }
+app.post('/api/tasks/:id/attachments', async (c) => {
+  const body = await c.req.json();
+  return c.json(
+    addTaskAttachment(
+      Number(c.req.param('id')),
+      { file: String(body.file ?? ''), label: str(body.label), creator: str(body.creator) },
+      actorOf(body)
+    ),
+    201
+  );
+});
+
+app.patch('/api/attachments/:id', async (c) => {
+  const body = await c.req.json();
+  return c.json(updateTaskAttachment(Number(c.req.param('id')), String(body.label ?? '')));
+});
+
+app.delete('/api/attachments/:id', (c) => {
+  deleteTaskAttachment(Number(c.req.param('id')));
+  return c.json({ ok: true });
+});
 
 app.post('/api/files', async (c) => {
   const body = await c.req.parseBody();

@@ -8,6 +8,7 @@ import type {
   ResearchItem,
   ResearchWithStats,
   Task,
+  TaskAttachment,
 } from '../../src/shared/types';
 
 export type TaskDetail = Task & {
@@ -15,6 +16,7 @@ export type TaskDetail = Task & {
   knowledge: KnowledgeEntry[];
   deps: DepSummary[];
   dependents: DepSummary[];
+  attachments: TaskAttachment[];
 };
 export type ProjectDetail = Project & { tasks: Task[] };
 export type ProjectPatch = Partial<Pick<Project, 'goal' | 'status' | 'next_step' | 'blockers'>>;
@@ -58,6 +60,13 @@ export const api = {
   comment: (id: number, content: string) =>
     post(`/api/tasks/${id}/progress`, { content, kind: 'comment' }).then((r) => j<Task>(r)),
   remove: (id: number) => fetch(`/api/tasks/${id}`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
+  // 任务附件：file 传 uploadFile 返回的文件名
+  addAttachment: (taskId: number, file: string, label = '') =>
+    post(`/api/tasks/${taskId}/attachments`, { file, label }).then((r) => j<TaskAttachment>(r)),
+  patchAttachment: (id: number, label: string) =>
+    post(`/api/attachments/${id}`, { label }, 'PATCH').then((r) => j<TaskAttachment>(r)),
+  removeAttachment: (id: number) =>
+    fetch(`/api/attachments/${id}`, { method: 'DELETE' }).then((r) => j<{ ok: boolean }>(r)),
 
   kb: () => fetch('/api/kb').then((r) => j<KnowledgeEntry[]>(r)),
   createKb: (input: KbPatch) => post('/api/kb', input).then((r) => j<KnowledgeEntry>(r)),
